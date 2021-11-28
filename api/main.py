@@ -1,23 +1,21 @@
-import time
-from flask import Flask, request
-from random import randint
-from models import *
-from services import *
+from flask import Flask, request, Response
+from repositories import ProductRepository, RulesRepository
+from services import ProductLookupService
 
-__app = Flask(__name__,
-              static_folder='../build',
-              static_url_path='/')
-
-__product_lookup_service = ProductLookupService()
-
-# THis depends on pickle files (of models).
-__prediction_service = None  # TODO: Singleton service class to provide predictive functions
+app = Flask(__name__,
+            static_folder='../build',
+            static_url_path='/')
+__product_repository = ProductRepository('products.csv.xz')
+__rules_repository = RulesRepository('association_rules.csv.xz')
+__product_lookup_service = ProductLookupService(__product_repository, __rules_repository)
 
 
-# See this answer for why it’s needed: https://stackoverflow.com/a/44572672/1405571.
-@__app.after_request
-def add_cors_headers(response):
-    referrer = request.referrer[:-1]
+# See the Stack Overflow answer for why this is needed: https://stackoverflow.com/a/44572672/1405571.
+@app.after_request
+def add_cors_headers(response: Response) -> Response:
+    referrer = request.referrer[:-1] \
+               if request.referrer \
+               else None
     if referrer in ('http://localhost:3000', 'http://localhost:5000'):
         response.headers.add('Access-Control-Allow-Origin', referrer)
         response.headers.add('Access-Control-Allow-Credentials', 'true')
@@ -29,32 +27,17 @@ def add_cors_headers(response):
     return response
 
 
-@__app.route('/')
-def index():
-    return __app.send_static_file('index.html')
+@app.route('/')
+def index() -> Response:
+    return app.send_static_file('index.html')
 
 
-# Returns a list of suggestions given some input (e.g., the first 3 letters of a
-# product and/or existing items in the shopping list)
-@__app.route('/api/suggestion', methods=['POST'])
-def suggestion():
+@app.route('/api/suggestion', methods=['POST'])
+def suggestion() -> dict[str, list[dict]]:
     request_data = request.json
-    return {'data': __product_lookup_service.get_by_query(request_data['query'])}
-    # Cases:
-    # 1. No items on list; use types in search bar
-    #    * Index structure to reverse look up product id from text.
-    #    * Results sorted by frequency of purchase. (No model needed)
-    # 2. User has some items in the list; suggest additional items based on list.
-    #    * Query association model for additional items.
-    # 3. User has some items in the list and types in search bar; suggest based on both.
-    #    * Query association model for additional items.
-    #    * Intersect the item suggestions list with the results of a look up using the text.
-
-
-@__app.route('/api/time')  # TODO: Remove; it was to check that the API server was working!
-def get_current_time():
-    return {'time': time.time()}
+    return {'data': __product_lookup_service.get_suggestions(frozenset(request_data['basket']),
+                                                             request_data['query'])}
 
 
 if __name__ == '__main__':
-    __app.run()
+    app.run()

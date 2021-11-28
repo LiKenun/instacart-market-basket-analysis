@@ -1,0 +1,6 @@
+toolz==0.11.2
+efficient_apriori==2.0.1
+pylev
+fast_autocomplete==0.9.0
+python-dotenv==0.19.2
+Flask==2.0.1

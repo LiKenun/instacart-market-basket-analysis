@@ -23,8 +23,9 @@ function App() {
   }
 
   useEffect(() => {
-    axios.post('http://localhost:5000/api/suggestion',
-               {query: searchQuery})
+    axios.post('/api/suggestion',
+               {basket: listItems.map(value => value.id),
+                query: searchQuery})
          .then(response => {
             setSuggestions(response.data['data']);
             document.getElementById('suggestionsContainer').scrollIntoView(false);
