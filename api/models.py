@@ -46,7 +46,7 @@ class Rule:
 
     @property
     def lift(self) -> Optional[float]:
-        return self.confidence * self.transaction_count / self.additional_count
+        return (self.joint_count * self.transaction_count) / (self.additional_count * self.base_count)
 
     @property
     def support(self) -> Optional[float]:
