@@ -95,7 +95,7 @@ class Suggestion:
 
     def __gt__(self, other):
         return self.lift < other.lift or \
-               self.lift == other.lift and self.confidence <= other.confidence or \
+               self.lift == other.lift and self.confidence < other.confidence or \
                self.lift == other.lift and self.confidence == other.confidence and self.product.id < other.product.id
 
     def __hash__(self):
@@ -104,12 +104,12 @@ class Suggestion:
     def __le__(self, other):
         return self.lift > other.lift or \
                self.lift == other.lift and self.confidence >= other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id > other.product.id
+               self.lift == other.lift and self.confidence == other.confidence and self.product.id >= other.product.id
 
     def __lt__(self, other):
         return self.lift > other.lift or \
-               self.lift == other.lift and self.confidence >= other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id >= other.product.id
+               self.lift == other.lift and self.confidence > other.confidence or \
+               self.lift == other.lift and self.confidence == other.confidence and self.product.id > other.product.id
 
     def __ne__(self, other):
         return self.lift != other.lift or self.confidence != other.confidence or self.product.id != other.product.id
