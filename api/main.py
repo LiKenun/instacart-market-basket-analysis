@@ -6,7 +6,7 @@ app = Flask(__name__,
             static_folder='../build',
             static_url_path='/')
 __product_repository = ProductRepository('products.csv.xz')
-__rules_repository = RulesRepository('association_rules.csv.xz')
+__rules_repository = RulesRepository(__product_repository, 'association_rules.csv.xz')
 __product_lookup_service = ProductLookupService(__product_repository, __rules_repository)
 
 
@@ -35,8 +35,8 @@ def index() -> Response:
 @app.route('/api/suggestion', methods=['POST'])
 def suggestion() -> dict[str, list[dict]]:
     request_data = request.json
-    return {'data': __product_lookup_service.get_suggestions(frozenset(request_data['basket']),
-                                                             request_data['query'])}
+    return_data = __product_lookup_service.get_suggestions(frozenset(request_data['basket']), request_data['query'])
+    return {'data': return_data}
 
 
 if __name__ == '__main__':

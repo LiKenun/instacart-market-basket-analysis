@@ -1,5 +1,7 @@
 from ast import literal_eval
 import csv
+import dacite
+from dacite import from_dict
 from dataclasses import astuple, fields, is_dataclass
 from functools import partial
 from io import TextIOBase, TextIOWrapper
@@ -7,7 +9,9 @@ from itertools import starmap
 import lzma
 from lzma import LZMAFile
 from toolz import apply, first, identity, peek, thread_last
-from typing import Any, Callable, IO, Iterable, Union, Optional
+from typing import Any, Callable, IO, Iterable, Optional, Type, TypeVar, Union
+
+T = TypeVar('T')
 
 
 def __write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable], data: Any) -> None:
@@ -33,6 +37,12 @@ def __write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable
         rows = data
     writer.writerow(column_names)
     writer.writerows(rows)
+
+
+def create_dict_to_dataclass_mapper(data_class: Type[T], config: Optional[dacite.Config] = None) -> Callable[[Iterable[dict[str, Any]]], Iterable[T]]:
+    def function(iterable: Iterable[dict[str, Any]]) -> Iterable[T]:
+        return map(partial(from_dict, data_class, config=config), iterable)
+    return function
 
 
 def create_mapper(func: Callable) -> Callable[[Iterable], Iterable]:
@@ -82,6 +92,12 @@ def transform(transformations: dict[str, Callable], data: Iterable[list[str]]) -
 
 def unescape(value: str) -> str:
     return literal_eval(f'"{value}"')
+
+
+# By Raymond Hettinger (https://twitter.com/raymondh/status/944125570534621185)
+# See also: https://www.peterbe.com/plog/fastest-way-to-uniquify-a-list-in-python-3.6
+def unique(iterable: Iterable) -> list:
+    return list(dict.fromkeys(iterable))
 
 
 def write_compressed_csv(file: Union[IO[bytes], str], column_names: Optional[Iterable], data: Any) -> None:

@@ -56,7 +56,7 @@ def __train(transactions: Iterable[Union[set[int], tuple[int], list[int]]]) -> I
     null_base_rules = (Rule((), (product,), count, transaction_count, count, transaction_count)
                        for product, count in product_counts.items())
     item_sets, rules = apriori(transactions,
-                               min_support=200 / 3346083,
+                               min_support=1000 / 3346083,
                                min_confidence=0.01,
                                max_length=3,
                                verbosity=1)

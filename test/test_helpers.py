@@ -3,7 +3,7 @@ from dataclasses import make_dataclass
 from io import StringIO
 from typing import Callable
 import unittest
-from helpers import create_mapper, create_transform, is_namedtuple_instance, read_csv, write_csv, unescape
+from helpers import create_dict_to_dataclass_mapper, create_mapper, create_transform, is_namedtuple_instance, read_csv, unique, write_csv, unescape
 
 
 class TestHelpers(unittest.TestCase):
@@ -13,13 +13,24 @@ class TestHelpers(unittest.TestCase):
                        '0,A\n' \
                        '1,B\n' \
                        '2,C\n'
+        cls.nonunique_sequence = [9, 8, 7, 6, 5, 4, 3, 2, 1, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        cls.record_sequence = ({'id': 0, 'name': 'A'},
+                               {'id': 1, 'name': 'B'},
+                               {'id': 2, 'name': 'C'})
         cls.row_sequence = (['id', 'name'],
                             ['0', 'A'],
                             ['1', 'B'],
                             ['2', 'C'])
-        cls.record_sequence = ({'id': 0, 'name': 'A'},
-                               {'id': 1, 'name': 'B'},
-                               {'id': 2, 'name': 'C'})
+        cls.unique_sequence = [9, 8, 7, 6, 5, 4, 3, 2, 1, 10]
+
+    def test_create_dict_to_dataclass_mapper(self):
+        Record = make_dataclass('Record', [('id', int), ('name', str)])
+        expected = (Record(0, 'A'),
+                    Record(1, 'B'),
+                    Record(2, 'C'))
+        mapper = create_dict_to_dataclass_mapper(Record)
+        actual = tuple(mapper(self.record_sequence))
+        self.assertSequenceEqual(expected, actual)
 
     def test_create_mapper(self):
         data = [*range(0, 100)]
@@ -63,6 +74,14 @@ class TestHelpers(unittest.TestCase):
             self.assertEqual('\"', unescape(r'\"'))
         with self.subTest('Can unescape one doubly-escaped double-quote character'):
             self.assertEqual('\"', unescape(unescape(r'\\\"')))
+
+
+    def test_unique(self):
+        with self.subTest('Non-unique sequence becomes unique'):
+            self.assertEqual(self.unique_sequence, unique(self.nonunique_sequence))
+        with self.subTest('Already unique sequence just becomes itself'):
+            self.assertEqual(self.unique_sequence, unique(self.unique_sequence))
+
 
     def test_write_csv(self):
         with self.subTest('Is callable'):

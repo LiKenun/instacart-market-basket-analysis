@@ -6,25 +6,26 @@ import {CloseOutlined} from "@ant-design/icons";
 import logo from './logo.svg';
 
 function App() {
-  const [listItems, setListItems] = useState(Array.from({length: 20}, (_, index) => {return {id: index, name: 'Item #' + (index + 1)}}));
-  const [suggestions, setSuggestions] = useState(Array.from({length: 5}, (_, index) => {return {id: index + 20, name: 'Suggestion #' + (index + 1)}}));
+  const [listItems, setListItems] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   const addListItem = (newItem) => {
-    setListItems([...listItems.filter(item => item.id !== newItem.id), newItem]);
+    setListItems([...listItems.filter(item => item.product.id !== newItem.product.id), newItem]);
   }
 
   const removeListItem = (id) => {
-    setListItems(listItems.filter(item => item.id !== id));
+    setListItems(listItems.filter(item => item.product.id !== id));
+    setSearchQuery(new String(searchQuery)); // Forces a requery
   }
 
   const removeSuggestion = (id) => {
-    setSuggestions(suggestions.filter(item => item.id !== id));
+    setSuggestions(suggestions.filter(item => item.product.id !== id));
   }
 
   useEffect(() => {
     axios.post('/api/suggestion',
-               {basket: listItems.map(value => value.id),
+               {basket: listItems.map(value => value.product.id),
                 query: searchQuery})
          .then(response => {
             setSuggestions(response.data['data']);
@@ -43,32 +44,36 @@ function App() {
           <Typography.Paragraph style={{display: 'flex', flexDirection: 'column', flexGrow: 1}}>
             <List dataSource={listItems}
                   renderItem={item => (<List.Item actions={[<Button type="text"
-                                                                    onClick={(event) => removeListItem(item.id)}>
+                                                                    onClick={(event) => removeListItem(item.product.id)}>
                                                               <Typography.Text type="secondary">
                                                                 <CloseOutlined />
                                                               </Typography.Text>
                                                             </Button>]}>
                                          <Checkbox>
-                                           {item.name}
+                                           {item.product.name}
                                          </Checkbox>
                                        </List.Item>)}
-                  rowKey={item => item.id}
+                  rowKey={item => item.product.id}
                   style={{flexGrow: 1}} />
             <Divider />
             <List id="suggestionsContainer"
                   dataSource={suggestions}
-                  renderItem={item => (<List.Item>
+                  renderItem={item => (<List.Item actions={[/*<span>
+                                                              {'<- ' + item.base.map(product => product.name).join('; ') + ' ' +
+                                                               '(conf: ' + item.confidence.toLocaleString('en-US', {minimumFractionDigits: 8, maximumFractionDigits: 8}) +
+                                                               '; lift: ' + item.lift.toLocaleString('en-US', {minimumFractionDigits: 8, maximumFractionDigits: 8}) + ')'}
+                                                            </span>*/]}>
                                          <Typography.Link italic
                                                           type="secondary"
                                                           onClick={(event) => {
                                                             addListItem(item);
-                                                            removeSuggestion(item.id);
-                                                            setSearchQuery(new String(searchQuery));
+                                                            removeSuggestion(item.product.id);
+                                                            setSearchQuery(new String(searchQuery)); // Forces a requery
                                                           }}>
-                                           {item.name}
+                                           {item.product.name}
                                          </Typography.Link>
                                        </List.Item>)}
-                  rowKey={item => item.id} />
+                  rowKey={item => item.product.id} />
           </Typography.Paragraph>
         </div>
       </Layout.Content>
