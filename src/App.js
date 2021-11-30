@@ -58,13 +58,18 @@ function App() {
             <Divider />
             <List id="suggestionsContainer"
                   dataSource={suggestions}
-                  renderItem={item => (<List.Item actions={[/*<span>
-                                                              {'<- ' + item.base.map(product => product.name).join('; ') + ' ' +
-                                                               '(conf: ' + item.confidence.toLocaleString('en-US', {minimumFractionDigits: 8, maximumFractionDigits: 8}) +
-                                                               '; lift: ' + item.lift.toLocaleString('en-US', {minimumFractionDigits: 8, maximumFractionDigits: 8}) + ')'}
-                                                            </span>*/]}>
+                  renderItem={item => (<List.Item>
                                          <Typography.Link italic
                                                           type="secondary"
+                                                          title={item.product.name + ' (predicted from ' +
+                                                                 (item.base.length ?
+                                                                   item.base.map(product => product.name).join(', ') :
+                                                                   'empty list') +
+                                                                 ' with lift of ' +
+                                                                 item.lift.toLocaleString('en-US',
+                                                                                          {minimumFractionDigits: 2,
+                                                                                           maximumFractionDigits: 2}) +
+                                                                 ')'}
                                                           onClick={(event) => {
                                                             addListItem(item);
                                                             removeSuggestion(item.product.id);
