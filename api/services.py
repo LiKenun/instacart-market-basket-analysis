@@ -103,5 +103,5 @@ class ProductLookupService:
             if not first_result:  # Matching products from basket analysis and text query results are disjoint.
                 results = queried_products  # Use the text query results instead.
         return thread_last(unique(results, lambda suggestion: suggestion.product),
-                           (take, 25),  # Take the top 10 only.
+                           (take, 10),  # Take the top 10 only.
                            list)
