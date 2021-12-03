@@ -9,18 +9,28 @@ function App() {
   const [listItems, setListItems] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [getSuggestionTrigger, setGetSuggestionTrigger] = useState({})
 
   const addListItem = (newItem) => {
-    setListItems([...listItems.filter(item => item.product.id !== newItem.product.id), newItem]);
+    setListItems([...listItems, newItem]);
+    removeSuggestion(newItem.product.id);
   }
 
   const removeListItem = (id) => {
     setListItems(listItems.filter(item => item.product.id !== id));
-    setSearchQuery(new String(searchQuery)); // Forces a requery
+    triggerGetSuggestion();
   }
 
   const removeSuggestion = (id) => {
     setSuggestions(suggestions.filter(item => item.product.id !== id));
+  }
+
+  const triggerGetSuggestion = () => {
+    setGetSuggestionTrigger({}) // Forces a requery
+  }
+
+  const clearSearchQuery = () => {
+      //
   }
 
   useEffect(() => {
@@ -32,7 +42,7 @@ function App() {
             document.getElementById('suggestionsContainer').scrollIntoView(false);
          })
          .catch(error => setSuggestions([]));
-  }, [searchQuery]);
+  }, [getSuggestionTrigger]);
 
   return (
     <Layout style={{height: '100vh'}}>
@@ -70,11 +80,7 @@ function App() {
                                                                                           {minimumFractionDigits: 2,
                                                                                            maximumFractionDigits: 2}) +
                                                                  ')'}
-                                                          onClick={(event) => {
-                                                            addListItem(item);
-                                                            removeSuggestion(item.product.id);
-                                                            setSearchQuery(new String(searchQuery)); // Forces a requery
-                                                          }}>
+                                                          onClick={(event) => addListItem(item)}>
                                            {item.product.name}
                                          </Typography.Link>
                                        </List.Item>)}
@@ -87,6 +93,7 @@ function App() {
                style={{width: '100%'}}
                value={searchQuery}
                onChange={(event) => setSearchQuery(event.target.value)} />
+        <Button onClick={(event) => triggerGetSuggestion()}>🔍</Button>
       </Layout.Footer>
     </Layout>
   );
