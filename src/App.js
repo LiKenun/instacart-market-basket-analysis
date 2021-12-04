@@ -14,6 +14,8 @@ function App() {
   const addListItem = (newItem) => {
     setListItems([...listItems, newItem]);
     removeSuggestion(newItem.product.id);
+    if (!searchQuery)
+        triggerGetSuggestion();
   }
 
   const removeListItem = (id) => {
@@ -89,11 +91,12 @@ function App() {
         </div>
       </Layout.Content>
       <Layout.Footer>
-        <Input allowClear
-               style={{width: '100%'}}
-               value={searchQuery}
-               onChange={(event) => setSearchQuery(event.target.value)} />
-        <Button onClick={(event) => triggerGetSuggestion()}>🔍</Button>
+        <Input.Search allowClear
+                      style={{width: '100%'}}
+                      value={searchQuery}
+                      enterButton
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onSearch={(event) => triggerGetSuggestion()} />
       </Layout.Footer>
     </Layout>
   );
