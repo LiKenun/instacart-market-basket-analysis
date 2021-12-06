@@ -22,7 +22,8 @@ class ProductLookupService:
         name_index = defaultdict(set)
         for product in products:
             for word in ProductLookupService.__tokenize(product.name.casefold()):
-                name_index[word].add(product)
+                if len(word) > 1:
+                    name_index[word].add(product)
         return name_index
 
     def __get_basket_suggestions(self, basket: set[Product]) -> SortedSet[Suggestion]:
