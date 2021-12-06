@@ -50,7 +50,7 @@ class Rule:
 
     @property
     def support(self) -> Optional[float]:
-        return self.additional_count / self.transaction_count
+        return self.joint_count / self.transaction_count
 
     def __eq__(self, other):
         return self.base == other.base and self.additional == other.additional
