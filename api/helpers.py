@@ -49,7 +49,7 @@ def create_mapper(func: Callable) -> Callable[[Iterable], Iterable]:
     return partial(map, func)
 
 
-def create_transform(transformations: dict[str, Callable]) -> Callable[[Iterable[list[str]]], Iterable[dict]]:
+def create_transform(transformations: dict[str, Callable] = {}) -> Callable[[Iterable[list[str]]], Iterable[dict]]:
     return partial(transform, transformations)
 
 
