@@ -1,21 +1,27 @@
 from ast import literal_eval
 import csv
-import dacite
-from dacite import from_dict
 from dataclasses import astuple, fields, is_dataclass
 from functools import partial
+import html
 from io import TextIOBase, TextIOWrapper
-from itertools import starmap
+from itertools import groupby, starmap, zip_longest
 import lzma
 from lzma import LZMAFile
-from toolz import apply, first, identity, peek, thread_last
-from typing import Any, Callable, IO, Iterable, Optional, Type, TypeVar, Union
+from operator import ne
+from toolz import apply, drop, first, identity, peek
+from typing import Any, Callable, IO, Iterable, Optional, Protocol, Sequence, Type, TypeVar
 
 T = TypeVar('T')
+U = TypeVar('U')
 
 
-def __write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable], data: Any) -> None:
-    writer = csv.writer(file, quoting=csv.QUOTE_MINIMAL, dialect=csv.unix_dialect)
+class SupportsLessThan(Protocol):
+    def __lt__(self, __other: Any) -> bool: ...
+
+
+def _write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
+    writer = csv.writer(file, dialect=csv.unix_dialect, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
     if column_names is None:
         first_row, iterator = peek(data)
         if isinstance(first_row, dict):
@@ -39,18 +45,37 @@ def __write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable
     writer.writerows(rows)
 
 
-def create_dict_to_dataclass_mapper(data_class: Type[T], config: Optional[dacite.Config] = None) -> Callable[[Iterable[dict[str, Any]]], Iterable[T]]:
-    def function(iterable: Iterable[dict[str, Any]]) -> Iterable[T]:
-        return map(partial(from_dict, data_class, config=config), iterable)
+def create_csv_to_dataclass_mapper(data_class: Type[T], transform: dict[str, Callable[[str], Any]] = {}) \
+        -> Callable[[Iterable[Sequence[str]]], Iterable[T]]:
+    init_args = tuple(data_class.__annotations__.keys())
+    transform = tuple(transform.get(arg, identity)
+                      for arg in init_args)
+
+    def function(iterable: Iterable[Sequence[str]]) -> Iterable[T]:
+        header_row, iterable = peek(iterable)
+        if any(starmap(ne, zip_longest(init_args, header_row))):  # Validate the order, names, and number of arguments.
+            print(f'{init_args!r} != {header_row!r}')
+            raise NotImplementedError()  # Other possibilities not yet supported
+        for row in drop(1, iterable):
+            yield data_class(*starmap(apply, zip(transform, row)))
+
     return function
 
 
-def create_mapper(func: Callable) -> Callable[[Iterable], Iterable]:
-    return partial(map, func)
+def create_grouper(key: Optional[Callable[[T], U]] = None) -> Callable[[T], Iterable[tuple[U, Iterable[T]]]]:
+    return partial(groupby, key=key)
 
 
-def create_transform(transformations: dict[str, Callable] = {}) -> Callable[[Iterable[list[str]]], Iterable[dict]]:
-    return partial(transform, transformations)
+def create_mapper(func: Callable, *args: Any, **kwargs: Any) -> Callable[[Iterable], Iterable]:
+    if args or kwargs:
+        return partial(map, partial(func, *args, **kwargs))
+    else:
+        return partial(map, func)
+
+
+def create_sorter(key: Optional[Callable[[T], SupportsLessThan]] = None, reverse: bool = False) \
+        -> Callable[[Iterable], list[T]]:
+    return partial(sorted, key=key, reverse=reverse)
 
 
 def is_namedtuple_instance(value: Any) -> bool:
@@ -60,54 +85,63 @@ def is_namedtuple_instance(value: Any) -> bool:
             all(type(item) == str for item in value._fields))
 
 
-def read_compressed_csv(file: Union[IO[bytes], str]) -> Iterable[list[str]]:
+def is_sorted(comparison_operator: Callable[[T, T], bool], sequence: Sequence) -> bool:
+    return all(starmap(comparison_operator, zip(sequence, sequence[1:])))
+
+
+def read_compressed_csv(file: IO[bytes] | str, delimiter: str = '\t') -> Iterable[list[str]]:
     with lzma.open(file, 'rt', format=lzma.FORMAT_XZ, encoding='utf-8') as stream:
-        for row in read_csv(stream):
+        for row in read_csv(stream, delimiter):
             yield row
 
 
-def read_csv(file: Union[IO[bytes], str, TextIOBase]) -> Iterable[list[str]]:
+def read_compressed_txt(file: IO[bytes] | str) -> Iterable[str]:
+    with lzma.open(file, 'rt', format=lzma.FORMAT_XZ, encoding='utf-8') as stream:
+        for line in stream:
+            yield line.rstrip()
+
+
+def read_csv(file: IO[bytes] | str | TextIOBase, delimiter: str = '\t') -> Iterable[list[str]]:
     if isinstance(file, TextIOBase):
-        for row in csv.reader(file):
+        for row in csv.reader(file, delimiter=delimiter):
             yield row
     else:
         create_stream = open if isinstance(file, str) else TextIOWrapper
         with create_stream(file, encoding='utf-8') as stream:
-            for row in csv.reader(stream):
+            for row in csv.reader(stream, delimiter=delimiter):
                 yield row
 
 
-def transform(transformations: dict[str, Callable], data: Iterable[list[str]]) -> Iterable[dict]:
-    iterator = iter(data)
-    column_names = next(iterator)
-    transformation_list = tuple(transformations.get(column_name, identity)
-                                for column_name in column_names)
-    for row in iterator:
-        yield thread_last(row,
-                          (zip, transformation_list),
-                          (starmap, apply),
-                          (zip, column_names),
-                          dict)
+def read_txt(file: IO[bytes] | str | TextIOBase) -> Iterable[str]:
+    with open(file, encoding='utf-8') as stream:
+        for line in stream:
+            yield line.rstrip()
+
+
+def star(function: Callable, arguments: Iterable) -> Any:
+    return function(*arguments)
 
 
 def unescape(value: str) -> str:
-    return literal_eval(f'"{value}"')
+    return html.unescape(literal_eval(f'"{value}"'))
 
 
-# By Raymond Hettinger (https://twitter.com/raymondh/status/944125570534621185)
-# See also: https://www.peterbe.com/plog/fastest-way-to-uniquify-a-list-in-python-3.6
-def unique(iterable: Iterable) -> list:
-    return list(dict.fromkeys(iterable))
-
-
-def write_compressed_csv(file: Union[IO[bytes], str], column_names: Optional[Iterable], data: Any) -> None:
+def write_compressed_csv(file: IO[bytes] | str, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
     with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream:
-        write_csv(stream, column_names, data)
+        write_csv(stream, column_names, data, delimiter)
 
 
-def write_csv(file: Union[IO[bytes], str, TextIOBase], column_names: Optional[Iterable], data: Any) -> None:
+def write_compressed_txt(file: IO[bytes] | str, data: Iterable[str]) -> None:
+    with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream, \
+         TextIOWrapper(stream, encoding='utf-8', newline='\n') as text_stream:
+        text_stream.writelines(map(lambda line: line + '\n', data))
+
+
+def write_csv(file: IO[bytes] | str | TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
     if isinstance(file, TextIOBase):
-        __write_csv_to_text_stream(file, column_names, data)
+        _write_csv_to_text_stream(file, column_names, data, delimiter)
     else:
         if isinstance(file, str):
             with open(file, 'wt', encoding='utf-8', newline='') as stream:
@@ -115,3 +149,7 @@ def write_csv(file: Union[IO[bytes], str, TextIOBase], column_names: Optional[It
         else:
             with TextIOWrapper(file, encoding='utf-8', newline='') as stream:
                 write_csv(stream, column_names, data)
+
+
+def zipapply(functions: Iterable[Callable], arguments: Iterable) -> Iterable:
+    return map(apply, functions, arguments)

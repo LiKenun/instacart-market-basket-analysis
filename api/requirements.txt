@@ -1,7 +1,12 @@
+Cython
+dataclass-type-validator
 sortedcontainers
+-e git+https://github.com/GregoryMorse/pysettrie.git@patch-1#egg=pysettrie
 toolz
-dacite
 efficient_apriori
+nltk
+-e git+https://github.com/WojciechMula/pyahocorasick.git#egg=pyahocorasick
+contractions
 pylev
 fast_autocomplete==0.9.0
 python-dotenv==0.19.2

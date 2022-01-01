@@ -1,115 +1,106 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclass_type_validator import dataclass_validate
+from dataclasses import dataclass, field
+from math import isnan
+from operator import gt, lt
+from helpers import is_sorted
 
 
-@dataclass(init=True, repr=True, eq=False, order=False, unsafe_hash=False, frozen=True)
+def _check_is_all_int_and_sorted(items: tuple, field_name: str):
+    if not all(map(lambda item: isinstance(item, int) and item >= 0, items)):
+        raise TypeError(f'Field \'{field_name}\' must be a tuple of non-negative integers.')
+    if not is_sorted(lt, items):
+        raise ValueError(f'Field \'{field_name}\' must be sorted in ascending order and contain no duplicates.')
+
+
+@dataclass_validate(strict=True, before_post_init=True)
+@dataclass(order=True, frozen=True, slots=True)
+class Measure:
+    lift: float = 0.0
+    support: float = 0.0
+
+    def __post_init__(self):
+        if self.lift < 0.0 or isnan(self.lift):
+            raise ValueError('Field \'lift\' must be a non-negative number.')
+        if self.support < 0.0 or 1.0 < self.support or isnan(self.support):
+            raise ValueError('Field \'support\' must be between 0 and 1 (inclusive).')
+
+
+@dataclass_validate(strict=True, before_post_init=True)
+@dataclass(order=True, frozen=True, slots=True)
 class Product:
-    id: int
-    name: str
+    identifier: int
+    name: str = field(hash=False, compare=False)
+    measures: tuple = field(compare=False)
 
-    def __eq__(self, other):
-        return self.id == other.id
-
-    def __ge__(self, other):
-        return self.id >= other.id
-
-    def __gt__(self, other):
-        return self.id > other.id
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def __le__(self, other):
-        return self.id <= other.id
-
-    def __lt__(self, other):
-        return self.id < other.id
-
-    def __ne__(self, other):
-        return self.id != other.id
+    def __post_init__(self):
+        if self.identifier < 0:
+            raise ValueError('Field \'identifier\' must be a non-negative integer.')
+        if len(self.name) == 0:
+            raise ValueError('Field \'name\' must be a non-empty string.')
+        if not all(map(lambda measure: isinstance(measure, Measure), self.measures)):
+            raise TypeError('Field \'measures\' must be a tuple of Measure objects.')
+        if not is_sorted(gt, self.measures):
+            raise ValueError('Field \'measures\' must be sorted in descending order and contain no duplicates.')
 
 
-# See https://stackabuse.com/association-rule-mining-via-apriori-algorithm-in-python/ for the formulæ for confidence,
-# lift, and support.
-@dataclass(init=True, repr=True, eq=False, order=False, unsafe_hash=False, frozen=True)
+@dataclass_validate(strict=True, before_post_init=True)
+@dataclass(order=True, frozen=True, slots=True)
 class Rule:
-    base: tuple[Product, ...]
-    additional: tuple[Product, ...]
-    joint_count: int
-    base_count: int
-    additional_count: int
-    transaction_count: int
+    antecedent_items: tuple
+    consequent_items: tuple
+    measure: Measure = field(hash=False, compare=False)
 
-    @property
-    def confidence(self) -> Optional[float]:
-        return self.joint_count / self.base_count
-
-    @property
-    def lift(self) -> Optional[float]:
-        return (self.joint_count * self.transaction_count) / (self.additional_count * self.base_count)
-
-    @property
-    def support(self) -> Optional[float]:
-        return self.joint_count / self.transaction_count
-
-    def __eq__(self, other):
-        return self.base == other.base and self.additional == other.additional
-
-    def __ge__(self, other):
-        return self.base > other.base or \
-               self.base == other.base and self.additional >= other.additional
-
-    def __gt__(self, other):
-        return self.base > other.base or \
-               self.base == other.base and self.additional > other.additional
-
-    def __hash__(self):
-        return hash((self.base, self.additional))
-
-    def __le__(self, other):
-        return self.base < other.base or \
-               self.base == other.base and self.additional <= other.additional
-
-    def __lt__(self, other):
-        return self.base < other.base or \
-               self.base == other.base and self.additional < other.additional
-
-    def __ne__(self, other):
-        return self.base != other.base or self.additional != other.additional
+    def __post_init__(self):
+        _check_is_all_int_and_sorted(self.antecedent_items, 'antecedent_items')
+        if len(self.consequent_items) == 0:
+            raise ValueError('Field \'consequent_items\' must contain at least one item.')
+        _check_is_all_int_and_sorted(self.consequent_items, 'consequent_items')
+        if not set(self.antecedent_items).isdisjoint(self.consequent_items):
+            raise ValueError('An item may not be in both \'antecedent_items\' and \'consequent_items\'.')
+        if self.measure.support <= 0.0:
+            raise ValueError('Field \'support\' must be a positive value less than 1 (inclusive).')
 
 
-@dataclass(init=True, repr=True, eq=False, order=False, unsafe_hash=False, frozen=True)
+@dataclass_validate(strict=True, before_post_init=True)
+@dataclass(eq=False, unsafe_hash=True, frozen=True, slots=True)
 class Suggestion:
     product: Product
-    base: tuple[Product, ...]
-    confidence: float
-    lift: float
+    measure: Measure
+    antecedent_items: tuple = ()
+    rank: int = 0
+
+    def __post_init__(self):
+        _check_is_all_int_and_sorted(self.antecedent_items, 'antecedent_items')
+
+    # The custom comparison implementations are needed to prioritize sorting in descending order.
 
     def __eq__(self, other):
-        return self.lift == other.lift and self.confidence == other.confidence and self.product.id == other.product.id
+        return self.rank == other.rank and \
+               self.measure == other.measure and \
+               self.product == other.product and \
+               self.antecedent_items == other.antecedent_items
 
     def __ge__(self, other):
-        return self.lift < other.lift or \
-               self.lift == other.lift and self.confidence <= other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id <= other.product.id
+        return (self.rank, self.measure, self.product, self.antecedent_items) <= \
+               (other.rank, other.measure, other.product, other.antecedent_items)
 
     def __gt__(self, other):
-        return self.lift < other.lift or \
-               self.lift == other.lift and self.confidence < other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id < other.product.id
-
-    def __hash__(self):
-        return hash((self.lift, self.confidence, self.product.id))
+        return (self.rank, self.measure, self.product, self.antecedent_items) < \
+               (other.rank, other.measure, other.product, other.antecedent_items)
 
     def __le__(self, other):
-        return self.lift > other.lift or \
-               self.lift == other.lift and self.confidence >= other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id >= other.product.id
+        return (self.rank, self.measure, self.product, self.antecedent_items) >= \
+               (other.rank, other.measure, other.product, other.antecedent_items)
 
     def __lt__(self, other):
-        return self.lift > other.lift or \
-               self.lift == other.lift and self.confidence > other.confidence or \
-               self.lift == other.lift and self.confidence == other.confidence and self.product.id > other.product.id
+        return (self.rank, self.measure, self.product, self.antecedent_items) > \
+               (other.rank, other.measure, other.product, other.antecedent_items)
 
     def __ne__(self, other):
-        return self.lift != other.lift or self.confidence != other.confidence or self.product.id != other.product.id
+        return self.rank != other.rank or \
+               self.measure != other.measure or \
+               self.product != other.product or \
+               self.antecedent_items != other.antecedent_items
+
+
+__all__ = ('Measure', 'Product', 'Rule', 'Suggestion')
