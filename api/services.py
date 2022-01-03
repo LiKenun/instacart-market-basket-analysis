@@ -8,6 +8,8 @@ from nltk.tag import pos_tag
 from os.path import basename
 import re
 from settrie import SetTrieMap
+import sys
+from time import ctime, time
 from toolz import compose_left as compose, mapcat, merge_sorted, take, thread_last as thread, unique
 from typing import Callable, Iterable, Optional
 from models import Product, Suggestion
@@ -81,12 +83,13 @@ class LemmatizerService:
 class ProductLookupService:
     def __init__(self, product_repository: ProductRepository, rules_repository: RulesRepository,
                  lemmatizer_service: LemmatizerService) -> None:
+        get_time_as_string = compose(time, ctime)
         lemmatize = lemmatizer_service.lemmatize
 
         # Index of product identifiers to product names
-        print(f'Loading product names from {product_repository.products_data_file}…')
+        print(f'[{get_time_as_string()}] Loading product names from {product_repository.products_data_file}…',
+              file=sys.stderr)
         product_names = product_repository.get_all_products()
-        print(f' Loaded {len(product_names):,} product names.')
 
         # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
         empty_dictionary = {}
@@ -100,21 +103,24 @@ class ProductLookupService:
                    (map, lambda word: (word, empty_dictionary)),
                    dict,
                    partial(AutoComplete, synonyms=synonyms))
-        print(f' Initialized autocompletion engine.')
 
         # Products sorted by product identifier, where each product is found at the index equal to its identifier
         products = tuple(Product(index, name)
                          for index, name in enumerate(product_names))
         del product_names
-        print(f' Created {len(products):,} product objects.')
+        print(f'[{get_time_as_string()}]  Loaded {len(products):,} products.',
+              file=sys.stderr)
 
         # Association rules
-        print(f'Loading association rules from {rules_repository.rules_data_file}…')
+        print(f'[{get_time_as_string()}] Loading association rules from {rules_repository.rules_data_file}…',
+              file=sys.stderr)
         rules = rules_repository.get_all_rules()
-        print(f' Loaded {len(rules):,} association rules.')
+        print(f'[{get_time_as_string()}]  Loaded {len(rules):,} association rules.',
+              file=sys.stderr)
 
         # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
-        print(f'Creating association rule-based Suggestion objects indexed by antecedent item sets…')
+        print(f'[{get_time_as_string()}] Creating association rule-based suggestions indexed by antecedent item sets…',
+              file=sys.stderr)
         suggestions_by_antecedent_items = \
             thread(rules,
                    create_grouper(lambda rule: rule.antecedent_items),  # Group by antecedent items.
@@ -130,11 +136,11 @@ class ProductLookupService:
         del rules
 
         # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
-        print(f'Creating default Suggestion objects…')
         default_suggestions = suggestions_by_antecedent_items.get(())
 
         # Index of sets of products by words in product names (maps sets of words to sorted sets of Suggestions)
-        print(f'Creating search index by product name…')
+        print(f'[{get_time_as_string()}] Creating search index by product name…',
+              file=sys.stderr)
         suggestions_by_word = \
             thread(default_suggestions,
                    (map, lambda suggestion: (tuple(unique(map(first, lemmatize(suggestion.product.name)))),
@@ -159,7 +165,8 @@ class ProductLookupService:
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
         #self.__tokenize: Callable[[str], Iterable[str]] = compose(lemmatize, partial(map, first))
 
-        print(f'Product look-up service initialization completed.')
+        print(f'[{get_time_as_string()}] Product look-up service initialization completed.',
+              file=sys.stderr)
 
     def __get_basket_suggestions(self, basket: frozenset[Product]) -> Optional[Iterable[Suggestion]]:
         if not self.__has_suggestions_by_antecedent_items(basket):
