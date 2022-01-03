@@ -8,7 +8,7 @@ from itertools import groupby, starmap, zip_longest
 import lzma
 from lzma import LZMAFile
 from operator import ne
-from toolz import apply, drop, first, identity, peek
+from toolz import apply, drop, identity, peek
 from typing import Any, Callable, IO, Iterable, Optional, Protocol, Sequence, Type, TypeVar
 
 T = TypeVar('T')
@@ -37,7 +37,7 @@ def _write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable]
             column_names = first_row
             rows = iterator
         else:
-            column_names = tuple(map(first, vars(first_row).items()))
+            column_names = tuple(vars(first_row).keys())
             rows = (map(partial(getattr, row), column_names) for row in iterator)
     else:
         rows = data
@@ -76,6 +76,10 @@ def create_mapper(func: Callable, *args: Any, **kwargs: Any) -> Callable[[Iterab
 def create_sorter(key: Optional[Callable[[T], SupportsLessThan]] = None, reverse: bool = False) \
         -> Callable[[Iterable], list[T]]:
     return partial(sorted, key=key, reverse=reverse)
+
+
+def first(sequence: Sequence[T]) -> T:
+    return sequence[0]
 
 
 def is_namedtuple_instance(value: Any) -> bool:
@@ -118,8 +122,8 @@ def read_txt(file: IO[bytes] | str | TextIOBase) -> Iterable[str]:
             yield line.rstrip()
 
 
-def star(function: Callable, arguments: Iterable) -> Any:
-    return function(*arguments)
+def second(sequence: Sequence[T]) -> T:
+    return sequence[1]
 
 
 def unescape(value: str) -> str:

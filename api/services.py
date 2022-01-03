@@ -1,39 +1,58 @@
-import contractions
 from fast_autocomplete import AutoComplete
-from functools import partial, reduce
-from itertools import chain, starmap
+from functools import partial
+from itertools import chain, filterfalse, groupby, starmap
 import nltk
-from nltk.corpus import wordnet as wn
+from nltk.corpus import stopwords, wordnet as wn
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.tag import pos_tag
 from os.path import basename
 import re
 from settrie import SetTrieMap
-from toolz import compose_left as compose, first, juxt, mapcat, merge_sorted, second, take, \
-                  thread_last as thread, unique
-from typing import Callable, Collection, Iterable, Optional
-from models import Product, Rule, Suggestion
+from toolz import compose_left as compose, mapcat, merge_sorted, take, thread_last as thread, unique
+from typing import Callable, Iterable, Optional
+from models import Product, Suggestion
 from repositories import ProductRepository, RulesRepository
-from helpers import create_grouper, create_sorter, star, zipapply
+from helpers import create_grouper, create_sorter, first, second, zipapply
 
 
 class LemmatizerService:
     __numeric_re = r'(?:\d+|\d{1,3}(?:,\d{3})+)(?:(\.|,)\d+)?'
-    __find_tokens: Callable[[str], Iterable[str]] = \
+    tokenize: Callable[[str], Iterable[str]] = \
         compose(re.compile('|'.join((fr'(?:(?<=^)|(?<=[\s(]))(?:#|No.?\s*){__numeric_re}\+?(?=,?\s|\)|$)',
                                      fr'(?:(?<=^)|(?<=[\s(])){__numeric_re}(?:(?:\'s|["\'+])|\s*(?:%|c(?:oun)t\.?|cups?'
                                      r'|(?:fl\.?\s)?oz\.?|in(?:\.|ch(?:es)?)?|lbs?\.?|mgs?\.?|only|ounces?|p(?:ac)?k'
                                      r'|pcs?\.?|pieces?|pounds?|size|x))?(?=,?\s|\)|$)',
-                                     r'[^\s!"&\'()+,\-./:;?\[\]{}®™][^\s!"()+\-/:;?\[\]{}®™]*[^\s!"\'()+,\-./:;?\[\]{}®™]')))
+                                     r'[^\s!"&()+,\-./:;?\[\]{}][^\s!"()+\-/:;?\[\]{}]*[^\s!"()+,\-./:;?\[\]{}®™]')))
                   .finditer,
                 partial(map, re.Match.group))
 
     def __init__(self):
         LemmatizerService.__ensure_nltk_data(('corpora/omw-1.4',
+                                              'corpora/stopwords',
                                               'corpora/wordnet',
                                               'taggers/averaged_perceptron_tagger',
                                               'tokenizers/punkt'))
-        self.__lemmatizer = WordNetLemmatizer()
+        is_stopword = frozenset(stopwords.words('english')).__contains__
+        lemmatizer = WordNetLemmatizer()
+
+        def lemmatize_tagged_word(word: str, pos: Optional[str]) -> tuple[str, Optional[str]]:
+            if pos:
+                lemma = lemmatizer.lemmatize(word, pos)
+                if word == lemma:
+                    return word, None
+                return lemma, word  # The lemmatized form takes precedence over the original.
+            return word, None
+
+        self.lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
+            compose(str.lower,
+                    LemmatizerService.tokenize,
+                    partial(filterfalse, is_stopword),
+                    tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
+                    pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
+                    LemmatizerService.__map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
+                    partial(starmap, lemmatize_tagged_word),
+                    create_sorter(first),
+                    unique)
 
     @staticmethod
     def __map_to_wordnet_pos(words: Iterable[tuple[str, str]]) -> Iterable[tuple[str] | tuple[str, str]]:
@@ -47,11 +66,8 @@ class LemmatizerService:
                     yield word, wn.VERB
                 case 'EX' | 'IN' | 'RB' | 'RBR' | 'RBS':
                     yield word, wn.ADV
-                case 'CC' | 'DT' | 'FW' | 'LS' | 'MD' | 'POS' | 'PRP' | 'PRP$' | 'SYM' | 'TO' | 'UH' | 'WDT' | 'WP' | \
-                     'WP$' | 'WRB':
-                    yield (word,)  # These tags have no equivalent in WordNet, but the item still needs to be a tuple.
-                # case '$' | '#' | '“' | '”' | '(' | ')' | ',' | '.' | ':':
-                #     continue
+                case _:  # Other tags have no equivalent in WordNet.
+                    yield word, None
 
     @staticmethod
     def __ensure_nltk_data(names: Iterable[str]) -> None:
@@ -61,83 +77,49 @@ class LemmatizerService:
             except LookupError:
                 nltk.download(basename(name))
 
-    def create_word_set_with_lemmas(self, text: str) -> frozenset[str]:
-        return thread(text,
-                      LemmatizerService.__tokenize,
-                      LemmatizerService.__tag,
-                      juxt(compose(self.__lemmatize,  # Generate lemmas.
-                                   frozenset),
-                           compose(partial(map, first),  # Get original adjectives, adverbs, nouns, and verbs.
-                                   partial(filter, lambda word: len(word) > 1),  # Exclude tokens of length 1.
-                                   frozenset)),
-                      (reduce, frozenset.union))  # Merge original tokens, lemmas, and numeric tokens into one set.
-
-    def __lemmatize(self, words: Iterable[tuple[str] | tuple[str, str]]) -> Collection[str]:
-        return thread(words,
-                      (filter, lambda word_pos_pair: len(word_pos_pair) == 2),  # Exclude miscellaneous tags.
-                      (starmap, self.__lemmatizer.lemmatize),
-                      (filter, lambda lemma: len(lemma) > 1),  # Exclude lemmas of length 1.
-                      tuple)
-
-    @staticmethod
-    def __tag(sentences: Collection[str]) -> Collection[tuple[str] | tuple[str, str]]:
-        return thread(sentences,
-                      pos_tag,
-                      LemmatizerService.__map_to_wordnet_pos,  # Map NLTK’s tags to WordNet’s tags.
-                      tuple)
-
-    @staticmethod
-    def __tokenize(text: str) -> Collection[str]:
-        return thread(text,
-                      contractions.fix,  # Expand contractions.
-                      str.lower,
-                      LemmatizerService.__find_tokens,
-                      tuple)
-
 
 class ProductLookupService:
     def __init__(self, product_repository: ProductRepository, rules_repository: RulesRepository,
                  lemmatizer_service: LemmatizerService) -> None:
-        create_word_set_with_lemmas = lemmatizer_service.create_word_set_with_lemmas
+        lemmatize = lemmatizer_service.lemmatize
 
         # Index of product identifiers to product names
-        product_names: tuple[str] = product_repository.get_all_products()
+        print(f'Loading product names from {product_repository.products_data_file}…')
+        product_names = product_repository.get_all_products()
+        print(f' Loaded {len(product_names):,} product names.')
 
-        # Association rules
-        rules: tuple[Rule] = rules_repository.get_all_rules()
+        # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
+        empty_dictionary = {}
+
+        # Autocompletion engine for text queries using words from product names
+        synonyms = dict(map(lambda group: (group[0], list(unique(map(lambda pair: pair[1], group[1])))), groupby(
+            sorted(filter(lambda pair: pair[1], chain.from_iterable(lemmatize(product) for product in product_names))),
+            lambda pair: pair[0])))
+        autocompleter = \
+            thread(synonyms,
+                   (map, lambda word: (word, empty_dictionary)),
+                   dict,
+                   partial(AutoComplete, synonyms=synonyms))
+        print(f' Initialized autocompletion engine.')
 
         # Products sorted by product identifier, where each product is found at the index equal to its identifier
-        products: tuple[Optional[Product]] = \
-            thread(rules,
-                   (mapcat, lambda rule: ((item, rule.measure)  # Extract product identifier and all its Measures.
-                                          for item in rule.consequent_items)),
-                   create_sorter(lambda pair: (-pair[0], pair[1]), True),  # Sort by product identifier and Measure.
-                   create_grouper(first),  # Group by product identifier.
-                   (starmap, lambda item, pairs: (item, Product(item, product_names[item], tuple(map(second, pairs))))),
-                   dict,
-                   lambda dictionary: tuple(dictionary.get(index)  # Unused products will be represented by None
-                                            for index in range(len(product_names))))  # at their respective indices.
+        products = tuple(Product(index, name)
+                         for index, name in enumerate(product_names))
         del product_names
+        print(f' Created {len(products):,} product objects.')
 
-        # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
-        default_suggestions: tuple[Suggestion] = \
-            thread(products,
-                   (filter, None),  # Filter out Nones.
-                   (map, lambda product: (product, product.measures[-1])),  # Use the last Measure.
-                   (starmap, Suggestion),  # The created Suggestions will have the maximum support for the Product.
-                   sorted,
-                   tuple)
-
-        # Function to get a Product by its integer identifier
-        get_product_by_identifier = products.__getitem__
+        # Association rules
+        print(f'Loading association rules from {rules_repository.rules_data_file}…')
+        rules = rules_repository.get_all_rules()
+        print(f' Loaded {len(rules):,} association rules.')
 
         # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
-        suggestions_by_antecedent_items: SetTrieMap = \
+        print(f'Creating association rule-based Suggestion objects indexed by antecedent item sets…')
+        suggestions_by_antecedent_items = \
             thread(rules,
-                   (filter, lambda rule: len(rule.antecedent_items) > 0),  # Ignore rules without antecedent items.
                    create_grouper(lambda rule: rule.antecedent_items),  # Group by antecedent items.
-                   (map, partial(zipapply, (partial(map, get_product_by_identifier),
-                                            compose(partial(mapcat, lambda rule: ((get_product_by_identifier(item),
+                   (map, partial(zipapply, (partial(map, products.__getitem__),
+                                            compose(partial(mapcat, lambda rule: ((products[item],
                                                                                    rule.measure,
                                                                                    rule.antecedent_items)
                                                                                   for item in rule.consequent_items)),
@@ -147,12 +129,16 @@ class ProductLookupService:
                    SetTrieMap)
         del rules
 
+        # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
+        print(f'Creating default Suggestion objects…')
+        default_suggestions = suggestions_by_antecedent_items.get(())
+
         # Index of sets of products by words in product names (maps sets of words to sorted sets of Suggestions)
-        suggestions_by_word: SetTrieMap = \
-            thread(products,
-                   (filter, None),  # Filter out Nones.
-                   (map, lambda product: (create_word_set_with_lemmas(product.name),
-                                          Suggestion(product, product.measures[-1], rank=1))),
+        print(f'Creating search index by product name…')
+        suggestions_by_word = \
+            thread(default_suggestions,
+                   (map, lambda suggestion: (tuple(unique(map(first, lemmatize(suggestion.product.name)))),
+                                             suggestion)),
                    create_sorter(first),  # Sort by Product word set.
                    create_grouper(first),  # Group by Product word set; it’s possible that several Products share a set.
                    (starmap, lambda words, pairs: (words, tuple(sorted(map(second, pairs))))),
@@ -165,71 +151,62 @@ class ProductLookupService:
                     result.update(suggestions)
             return result
 
-        # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
-        empty_dictionary = {}
-
-        # Autocompletion engine for text queries using words from product names
-        autocompleter: AutoComplete = \
-            thread(suggestions_by_word.keys(),
-                   chain,
-                   (reduce, set.union),
-                   (map, lambda word: (word, empty_dictionary)),
-                   dict,
-                   AutoComplete)
-
-        self.__autocomplete = autocompleter.search
-        self.__default_suggestions = default_suggestions
-        self.__get_product_by_identifier = get_product_by_identifier
+        self.__autocomplete: AutoComplete = autocompleter.search
+        self.__default_suggestions: tuple[Suggestion, ...] = default_suggestions
+        self.__get_product_by_identifier = products.__getitem__
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
         self.__get_suggestions_by_words = get_suggestions_by_words
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
-        self.__tokenize = lemmatizer_service.create_word_set_with_lemmas
+        self.__tokenize: Callable[[str], Iterable[str]] = compose(lemmatize, partial(map, first))
+
+        print(f'Product look-up service initialization completed.')
 
     def __get_basket_suggestions(self, basket: frozenset[Product]) -> Optional[Iterable[Suggestion]]:
         if not self.__has_suggestions_by_antecedent_items(basket):
             return None
-        return thread(basket,
-                      self.__get_suggestions_by_antecedent_items,
-                      (star, merge_sorted))
+        return merge_sorted(*self.__get_suggestions_by_antecedent_items(basket))
 
     def __get_products_from_query(self, query: str) -> Optional[Iterable[Suggestion]]:
-        terms = self.__tokenize(query)
-        if not terms:
+        if not query:
             return None
-        suggestion_sets = thread(terms,
-                                 (map, self.__autocomplete),
-                                 (map, self.__get_suggestions_by_words))
-        results = first(suggestion_sets)
+        terms = self.__tokenize(query)
+        suggestion_sets = (self.__get_suggestions_by_words(word)
+                           for word in (self.__autocomplete(term)
+                                        for term in terms))
+        try:
+            results = next(suggestion_sets)
+        except StopIteration:
+            return frozenset()
         for suggestions in suggestion_sets:
             results.intersection_update(suggestions)
         return sorted(results)
 
     def get_suggestions(self, basket: Iterable[int] = frozenset(), query: str = '') -> list[Suggestion]:
-        query = query.strip()
-        if query:
-            query_suggestions = self.__get_products_from_query(query)
-        else:
-            query_suggestions = None
+        # Determine what to get suggestions for; execute only the code necessary to fulfill the request.
+        query_suggestions = self.__get_products_from_query(query.strip())
         if basket:
             basket_products = frozenset(map(self.__get_product_by_identifier, basket))
             basket_suggestions = self.__get_basket_suggestions(basket_products)
         else:
             basket_suggestions = basket_products = None
-        match not query_suggestions, not basket_suggestions:
-            case True, True:
+
+        # Grab the relevant suggestions based on the request and whether results are available.
+        match query_suggestions is None, basket_suggestions is None:
+            case True, True:  # No query, and basket suggestions came up empty
                 suggestions = self.__default_suggestions
-            case True, False:
+            case True, False:  # No query, but there were some basket suggestions
                 suggestions = chain(basket_suggestions, self.__default_suggestions)
-            case False, True:
+            case False, True:  # Possible query results, but basket suggestions came up empty
                 suggestions = query_suggestions
-            case _:
+            case _:  # Possible query results, and also basket suggestions
                 suggestions = chain(query_suggestions, basket_suggestions)
-        pipeline = [partial(unique, key=lambda suggestion: suggestion.product)]
+
+        # Filter for 10 unique products.
+        unique_suggestions = unique(suggestions, lambda suggestion: suggestion.product)
         if basket_products:
-            pipeline.append(partial(filter, lambda suggestion: suggestion.product not in basket_products))
-        pipeline.append(partial(take, 10))
-        pipeline.append(list)
-        return compose(*pipeline)(suggestions)
+            unique_suggestions = filter(lambda suggestion: suggestion.product not in basket_products,
+                                        unique_suggestions)
+        return list(take(10, unique_suggestions))
 
 
 __all__ = ('LemmatizerService', 'ProductLookupService')

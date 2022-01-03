@@ -11,7 +11,7 @@ from zipfile import ZipFile
 from helpers import read_csv, read_txt, unescape, write_compressed_csv, write_compressed_txt
 
 
-def _parse_args() -> tuple[str, str, float, str]:
+def _parse_args() -> tuple[str, Optional[str], Optional[float], Optional[float], str]:
     parser = ArgumentParser(description='Mines association rules from Instacart’s market basket analysis data. Download'
                                         ' it from: https://www.kaggle.com/c/instacart-market-basket-analysis/data')
     parser.add_argument('--input', metavar='PATH', action='store', type=str,
@@ -21,6 +21,8 @@ def _parse_args() -> tuple[str, str, float, str]:
                         help='a list of product identifiers to exclude')
     parser.add_argument('--minsupport', metavar='PERCENTAGE', action='store', type=float, required=False,
                         help='the minimum support (as a percentage of transactions) for any rule under consideration')
+    parser.add_argument('--minconf', metavar='PERCENTAGE', action='store', type=float, required=False,
+                        help='the minimum confidence for any rule under consideration')
     parser.add_argument('--output', metavar='PATH', action='store', type=str,
                         help='the output directory to store the association rules and product list')
     args = parser.parse_args()
@@ -31,8 +33,11 @@ def _parse_args() -> tuple[str, str, float, str]:
     minsupport = (args.minsupport
                   if args.minsupport
                   else None)
+    minconf = (args.minconf
+               if args.minconf
+               else None)
     output_path = abspath(args.output or '')
-    return input_path, exclusions_path, minsupport, output_path
+    return input_path, exclusions_path, minsupport, minconf, output_path
 
 
 def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str], tuple[tuple[int, ...], ...]]:
@@ -76,7 +81,8 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
     return tuple(map(second, products)), tuple(map(tuple, transactions.values()))
 
 
-def _train(transactions: Iterable[tuple[int]], min_support: Optional[float] = None) -> tuple[Rule]:
+def _train(transactions: Iterable[tuple[int]], min_support: Optional[float] = None,
+           min_confidence: Optional[float] = None) -> tuple[Rule]:
     product_counts = Counter(chain.from_iterable(transactions))
     transaction_count = len(transactions)
     null_base_rules = (Rule((), (product,), count, transaction_count, count, transaction_count)
@@ -85,7 +91,9 @@ def _train(transactions: Iterable[tuple[int]], min_support: Optional[float] = No
                                min_support=(100 / transaction_count
                                             if min_support is None
                                             else min_support),
-                               min_confidence=0.0,
+                               min_confidence=(1 / 10
+                                               if min_confidence is None
+                                               else min_confidence),
                                max_length=max(map(len, transactions)),
                                verbosity=1)
     return tuple(chain(null_base_rules, filter(lambda rule: rule.lift > 1, rules)))
@@ -104,7 +112,7 @@ def _dump(directory: str, products: tuple[str], rules: tuple[Rule]) -> None:
 
 
 def run() -> None:
-    input_path, exclusions_path, minsupport, output_path = _parse_args()
+    input_path, exclusions_path, minsupport, minconf, output_path = _parse_args()
     print(f'Loading exclusions from {exclusions_path}…')
     exclusions = frozenset(map(int, read_txt(exclusions_path))
                            if exclusions_path is not None
@@ -113,7 +121,7 @@ def run() -> None:
     with ZipFile(input_path) as archive:
         products, transactions = _preprocess(archive, exclusions)
     print('Training…')
-    rules = _train(transactions, minsupport)
+    rules = _train(transactions, minsupport, minconf)
     del transactions
     print(f'Saving products and rules to {output_path}…')
     _dump(output_path, products, rules)

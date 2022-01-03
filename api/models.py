@@ -30,17 +30,12 @@ class Measure:
 class Product:
     identifier: int
     name: str = field(hash=False, compare=False)
-    measures: tuple = field(compare=False)
 
     def __post_init__(self):
         if self.identifier < 0:
             raise ValueError('Field \'identifier\' must be a non-negative integer.')
         if len(self.name) == 0:
             raise ValueError('Field \'name\' must be a non-empty string.')
-        if not all(map(lambda measure: isinstance(measure, Measure), self.measures)):
-            raise TypeError('Field \'measures\' must be a tuple of Measure objects.')
-        if not is_sorted(gt, self.measures):
-            raise ValueError('Field \'measures\' must be sorted in descending order and contain no duplicates.')
 
 
 @dataclass_validate(strict=True, before_post_init=True)
