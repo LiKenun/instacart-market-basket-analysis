@@ -73,15 +73,15 @@ function App() {
                   renderItem={item => (<List.Item>
                                          <Typography.Link italic
                                                           type="secondary"
-                                                          title={item.product.name + ' (predicted from ' +
+                                                          title={item.product.name + ' ⟵ ' +
                                                                  (item.antecedent_items.length ?
                                                                    item.antecedent_items.map(product => product.name).join(', ') :
                                                                    'empty list') +
-                                                                 ' with lift of ' +
+                                                                 ' (' +
                                                                  item.measure.lift.toLocaleString('en-US',
                                                                                                   {minimumFractionDigits: 2,
                                                                                                    maximumFractionDigits: 2}) +
-                                                                 ')'}
+                                                                 ' lift)'}
                                                           onClick={(event) => addListItem(item)}>
                                            {item.product.name}
                                          </Typography.Link>

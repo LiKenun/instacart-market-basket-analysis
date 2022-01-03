@@ -10,7 +10,7 @@ import re
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
-from toolz import compose_left as compose, mapcat, merge_sorted, take, thread_last as thread, unique
+from toolz import compose_left as compose, identity, mapcat, merge_sorted, take, thread_last as thread, unique
 from typing import Callable, Iterable, Optional
 from models import Product, Suggestion
 from repositories import ProductRepository, RulesRepository
@@ -119,12 +119,13 @@ class ProductLookupService:
               file=sys.stderr)
         suggestions_by_antecedent_items = \
             thread(rules,
-                   create_grouper(lambda rule: rule.antecedent_items),  # Group by antecedent items.
-                   (map, partial(zipapply, (partial(map, products.__getitem__),
-                                            compose(partial(mapcat, lambda rule: ((products[item],
-                                                                                   rule.measure,
-                                                                                   rule.antecedent_items)
-                                                                                  for item in rule.consequent_items)),
+                   (map, lambda rule: (tuple(map(products.__getitem__, rule.antecedent_items)),  # below as: rule[0],
+                                       tuple(map(products.__getitem__, rule.consequent_items)),  #   │       rule[1],
+                                       rule.measure)),                                           #   ▼   and rule[2]
+                   create_grouper(first),
+                   (map, partial(zipapply, (identity,
+                                            compose(partial(mapcat, lambda rule: ((item, rule[2], rule[0])
+                                                                                  for item in rule[1])),
                                                     partial(starmap, Suggestion),
                                                     sorted,
                                                     tuple)))),

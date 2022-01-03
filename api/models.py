@@ -5,13 +5,6 @@ from operator import lt
 from helpers import is_sorted
 
 
-def _check_is_all_int_and_sorted(items: tuple, field_name: str):
-    if not all(map(lambda item: isinstance(item, int) and item >= 0, items)):
-        raise TypeError(f'Field \'{field_name}\' must be a tuple of non-negative integers.')
-    if not is_sorted(lt, items):
-        raise ValueError(f'Field \'{field_name}\' must be sorted in ascending order and contain no duplicates.')
-
-
 @dataclass_validate(strict=True, before_post_init=True)
 @dataclass(order=True, frozen=True, slots=True)
 class Measure:
@@ -45,11 +38,17 @@ class Rule:
     consequent_items: tuple
     measure: Measure = field(hash=False, compare=False)
 
+    def __check_is_all_int_and_sorted(items: tuple, field_name: str):
+        if not all(isinstance(item, int) and item >= 0 for item in items):
+            raise TypeError(f'Field \'{field_name}\' must be a tuple of non-negative integers.')
+        if not is_sorted(lt, items):
+            raise ValueError(f'Field \'{field_name}\' must be sorted in ascending order and contain no duplicates.')
+
     def __post_init__(self):
-        _check_is_all_int_and_sorted(self.antecedent_items, 'antecedent_items')
+        Rule.__check_is_all_int_and_sorted(self.antecedent_items, 'antecedent_items')
         if len(self.consequent_items) == 0:
             raise ValueError('Field \'consequent_items\' must contain at least one item.')
-        _check_is_all_int_and_sorted(self.consequent_items, 'consequent_items')
+        Rule.__check_is_all_int_and_sorted(self.consequent_items, 'consequent_items')
         if not set(self.antecedent_items).isdisjoint(self.consequent_items):
             raise ValueError('An item may not be in both \'antecedent_items\' and \'consequent_items\'.')
         if self.measure.support <= 0.0:
@@ -65,7 +64,10 @@ class Suggestion:
     rank: int = 0
 
     def __post_init__(self):
-        _check_is_all_int_and_sorted(self.antecedent_items, 'antecedent_items')
+        if not all(isinstance(item, Product) for item in self.antecedent_items):
+            raise TypeError(f'Field \'antecedent_items\' must be a tuple of Product objects.')
+        if not is_sorted(lt, self.antecedent_items):
+            raise ValueError(f'Field \'antecedent_items\' must be sorted in ascending order and contain no duplicates.')
 
     # The custom comparison implementations are needed to prioritize sorting in descending order.
 
