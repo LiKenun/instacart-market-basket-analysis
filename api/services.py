@@ -41,7 +41,8 @@ class LemmatizerService:
             for word, pos in tagged_words:
                 if pos is not None and word != (lemma := lemmatizer.lemmatize(word, pos)):
                     yield lemma, word  # The lemmatized form takes precedence over the original.
-                yield word, None
+                else:
+                    yield word, None
 
         self.lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
             compose(str.lower,
