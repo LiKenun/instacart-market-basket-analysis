@@ -16,7 +16,6 @@ from models import Product, Suggestion
 from repositories import ProductRepository, RulesRepository
 from helpers import create_grouper, create_sorter, first, second, zipapply
 
-
 class LemmatizerService:
     __numeric_re = r'(?:\d+|\d{1,3}(?:,\d{3})+)(?:(\.|,)\d+)?'
     tokenize: Callable[[str], Iterable[str]] = \
@@ -37,13 +36,12 @@ class LemmatizerService:
         is_stopword = frozenset(stopwords.words('english')).__contains__
         lemmatizer = WordNetLemmatizer()
 
-        def lemmatize_tagged_word(word: str, pos: Optional[str]) -> tuple[str, Optional[str]]:
-            if pos:
-                lemma = lemmatizer.lemmatize(word, pos)
-                if word == lemma:
-                    return word, None
-                return lemma, word  # The lemmatized form takes precedence over the original.
-            return word, None
+        def lemmatize_tagged_words(tagged_words: Iterable[tuple[str, Optional[str]]]) \
+                -> Iterable[tuple[str, Optional[str]]]:
+            for word, pos in tagged_words:
+                if pos is not None and word != (lemma := lemmatizer.lemmatize(word, pos)):
+                    yield lemma, word  # The lemmatized form takes precedence over the original.
+                yield word, None
 
         self.lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
             compose(str.lower,
@@ -52,7 +50,7 @@ class LemmatizerService:
                     tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
                     pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
                     LemmatizerService.__map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
-                    partial(starmap, lemmatize_tagged_word),
+                    lemmatize_tagged_words,
                     create_sorter(first),
                     unique)
 
@@ -95,9 +93,7 @@ class ProductLookupService:
         empty_dictionary = {}
 
         # Autocompletion engine for text queries using words from product names
-        synonyms = dict(map(lambda group: (group[0], list(unique(map(lambda pair: pair[1], group[1])))), groupby(
-            sorted(filter(lambda pair: pair[1], chain.from_iterable(lemmatize(product) for product in product_names))),
-            lambda pair: pair[0])))
+        synonyms = dict(map(lambda group: (group[0], list(unique(filter(None, map(lambda pair: pair[1], group[1]))))), groupby(sorted(chain.from_iterable(lemmatize(product) for product in product_names), key=lambda pair: pair if pair[1] else (pair[0], '')), lambda pair: pair[0])))
         autocompleter = \
             thread(synonyms,
                    (map, lambda word: (word, empty_dictionary)),
@@ -163,7 +159,6 @@ class ProductLookupService:
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
         self.__get_suggestions_by_words = get_suggestions_by_words
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
-        #self.__tokenize: Callable[[str], Iterable[str]] = compose(lemmatize, partial(map, first))
 
         print(f'[{get_time_as_string()}] Product look-up service initialization completed.',
               file=sys.stderr)
@@ -176,7 +171,7 @@ class ProductLookupService:
     def __get_products_from_query(self, query: str) -> Optional[Iterable[Suggestion]]:
         if not query:
             return None
-        terms = LemmatizerService.tokenize(query)#self.__tokenize(query)
+        terms = LemmatizerService.tokenize(query)
         suggestion_sets = (self.__get_suggestions_by_words(word)
                            for word in (self.__autocomplete(term)
                                         for term in terms))
