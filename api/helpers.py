@@ -76,5 +76,9 @@ def second(sequence: Sequence[T]) -> T:
     return sequence[1]
 
 
+def star(function: Callable, arguments: Iterable) -> Any:
+    return function(*arguments)
+
+
 def zipapply(functions: Iterable[Callable], arguments: Iterable) -> Iterable:
     return map(apply, functions, arguments)

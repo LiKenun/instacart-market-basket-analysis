@@ -1,14 +1,15 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
-from itertools import chain, filterfalse, groupby, starmap
+from itertools import chain, filterfalse, starmap
 import re
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
-from toolz import compose_left as compose, identity, mapcat, merge_sorted, take, thread_last as thread, unique
+from toolz import compose_left as compose, identity, juxt, mapcat, merge_sorted, take, thread_last as thread, unique, \
+                  valmap
 from typing import Callable, Iterable, Optional, Protocol
 from models import Product, Rule, Suggestion
-from helpers import create_grouper, create_sorter, first, second, zipapply
+from helpers import create_grouper, create_sorter, first, second, star, zipapply
 
 
 class SupportsGetAllProducts(Protocol):
@@ -102,12 +103,21 @@ class ProductLookupService:
         empty_dictionary = {}
 
         # Autocompletion engine for text queries using words from product names
-        synonyms = dict(map(lambda group: (group[0], list(unique(filter(None, map(lambda pair: pair[1], group[1]))))), groupby(sorted(chain.from_iterable(lemmatize(product) for product in product_names), key=lambda pair: pair if pair[1] else (pair[0], '')), lambda pair: pair[0])))
         autocompleter = \
-            thread(synonyms,
-                   (map, lambda word: (word, empty_dictionary)),
-                   dict,
-                   partial(AutoComplete, synonyms=synonyms))
+            thread(product_names,
+                   (map, lemmatize),
+                   chain.from_iterable,  # Flattens the iterable of iterables into an iterable of tuples (lemma & word)
+                   create_sorter(lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma before grouping
+                   create_grouper(first),  # Groups words by their shared lemmas
+                   (map, partial(zipapply, (identity,  # Passes the lemma through unchanged
+                                            compose(partial(map, second),  # The original words (the “synonyms”)
+                                                    partial(filter, None),  # Filters out Nones
+                                                    unique,
+                                                    tuple)))),
+                   dict,  # Mapping of lemmas to a set of their other forms
+                   juxt(partial(valmap, lambda synonyms: empty_dictionary),  # Words with empty context dictionaries
+                        identity),  # Unchanged dictionary to be passed on to AutoComplete as the synonyms argument
+                   partial(star, AutoComplete))  # Calls the AutoComplete constructor with the two dictionaries
 
         # Products sorted by product identifier, where each product is found at the index equal to its identifier
         products = tuple(Product(index, name)
