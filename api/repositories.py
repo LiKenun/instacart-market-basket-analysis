@@ -18,10 +18,9 @@ class RulesRepository:
     rules_data_file: str
 
     __eval_tuple = compose(literal_eval, tuple)
-    __eval_measure = lambda text: Measure(*literal_eval(text))
     __map_to_dataclass = create_csv_to_dataclass_mapper(Rule, {'antecedent_items': __eval_tuple,
                                                                'consequent_items': __eval_tuple,
-                                                               'measure': __eval_measure})
+                                                               'measure': lambda text: Measure(*literal_eval(text))})
 
     def get_all_rules(self) -> tuple[Rule, ...]:
         return tuple(sorted(RulesRepository.__map_to_dataclass(read_compressed_csv(self.rules_data_file))))
