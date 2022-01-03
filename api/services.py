@@ -1,19 +1,13 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
 from itertools import chain, filterfalse, groupby, starmap
-import nltk
-from nltk.corpus import stopwords, wordnet as wn
-from nltk.stem.wordnet import WordNetLemmatizer
-from nltk.tag import pos_tag
-from os.path import basename
 import re
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
 from toolz import compose_left as compose, identity, mapcat, merge_sorted, take, thread_last as thread, unique
-from typing import Callable, Iterable, Optional
-from models import Product, Suggestion
-from repositories import ProductRepository, RulesRepository
+from typing import Callable, Iterable, Optional, Protocol
+from models import Product, Rule, Suggestion
 from helpers import create_grouper, create_sorter, first, second, zipapply
 
 
@@ -39,13 +33,39 @@ class LemmatizerService:
                 partial(map, re.Match.group))
 
     def __init__(self):
-        LemmatizerService.__ensure_nltk_data(('corpora/omw-1.4',
-                                              'corpora/stopwords',
-                                              'corpora/wordnet',
-                                              'taggers/averaged_perceptron_tagger',
-                                              'tokenizers/punkt'))
+        from nltk import download
+        from nltk.corpus import stopwords, wordnet as wn
+        from nltk.data import find
+        from nltk.stem.wordnet import WordNetLemmatizer
+        from nltk.tag import pos_tag
+        from os.path import basename
+
+        def ensure_nltk_data(names: Iterable[str]) -> None:
+            for name in names:
+                try:
+                    find(name)
+                except LookupError:
+                    download(basename(name))
+
+        ensure_nltk_data(('corpora/omw-1.4', 'corpora/stopwords', 'corpora/wordnet',
+                          'taggers/averaged_perceptron_tagger',
+                          'tokenizers/punkt'))
         is_stopword = frozenset(stopwords.words('english')).__contains__
         lemmatizer = WordNetLemmatizer()
+
+        def map_to_wordnet_pos(words: Iterable[tuple[str, str]]) -> Iterable[tuple[str] | tuple[str, str]]:
+            for word, pos in words:
+                match pos:
+                    case 'JJ' | 'JJR' | 'JJS' | 'PDT' | 'RP':
+                        yield word, wn.ADJ
+                    case 'CD' | 'NN' | 'NNS' | 'NNP' | 'NNPS':
+                        yield word, wn.NOUN
+                    case 'VB' | 'VBD' | 'VBG' | 'VBN' | 'VBP' | 'VBZ':
+                        yield word, wn.VERB
+                    case 'EX' | 'IN' | 'RB' | 'RBR' | 'RBS':
+                        yield word, wn.ADV
+                    case _:  # Other tags have no equivalent in WordNet.
+                        yield word, None
 
         def lemmatize_tagged_words(tagged_words: Iterable[tuple[str, Optional[str]]]) \
                 -> Iterable[tuple[str, Optional[str]]]:
@@ -61,33 +81,10 @@ class LemmatizerService:
                     partial(filterfalse, is_stopword),
                     tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
                     pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
-                    LemmatizerService.__map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
+                    map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
                     lemmatize_tagged_words,
                     create_sorter(first),
                     unique)
-
-    @staticmethod
-    def __map_to_wordnet_pos(words: Iterable[tuple[str, str]]) -> Iterable[tuple[str] | tuple[str, str]]:
-        for word, pos in words:
-            match pos:
-                case 'JJ' | 'JJR' | 'JJS' | 'PDT' | 'RP':
-                    yield word, wn.ADJ
-                case 'CD' | 'NN' | 'NNS' | 'NNP' | 'NNPS':
-                    yield word, wn.NOUN
-                case 'VB' | 'VBD' | 'VBG' | 'VBN' | 'VBP' | 'VBZ':
-                    yield word, wn.VERB
-                case 'EX' | 'IN' | 'RB' | 'RBR' | 'RBS':
-                    yield word, wn.ADV
-                case _:  # Other tags have no equivalent in WordNet.
-                    yield word, None
-
-    @staticmethod
-    def __ensure_nltk_data(names: Iterable[str]) -> None:
-        for name in names:
-            try:
-                nltk.data.find(name)
-            except LookupError:
-                nltk.download(basename(name))
 
 
 class ProductLookupService:
