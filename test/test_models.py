@@ -7,10 +7,6 @@ from models import *
 
 
 class TestModels(unittest.TestCase):
-    @staticmethod
-    def create_measures(*measures):
-        return tuple(starmap(Measure, measures))
-
     @classmethod
     def setUpClass(cls):
         # The products are sorted in descending order (by identifier).
