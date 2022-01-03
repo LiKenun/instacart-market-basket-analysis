@@ -16,6 +16,17 @@ from models import Product, Suggestion
 from repositories import ProductRepository, RulesRepository
 from helpers import create_grouper, create_sorter, first, second, zipapply
 
+
+class SupportsGetAllProducts(Protocol):
+    products_data_file: str
+    def get_all_products(self) -> tuple[str, ...]: ...
+
+
+class SupportsGetAllRules(Protocol):
+    rules_data_file: str
+    def get_all_rules(self) -> tuple[Rule, ...]: ...
+
+
 class LemmatizerService:
     __numeric_re = r'(?:\d+|\d{1,3}(?:,\d{3})+)(?:(\.|,)\d+)?'
     tokenize: Callable[[str], Iterable[str]] = \
@@ -80,7 +91,7 @@ class LemmatizerService:
 
 
 class ProductLookupService:
-    def __init__(self, product_repository: ProductRepository, rules_repository: RulesRepository,
+    def __init__(self, product_repository: SupportsGetAllProducts, rules_repository: SupportsGetAllRules,
                  lemmatizer_service: LemmatizerService) -> None:
         get_time_as_string = compose(time, ctime)
         lemmatize = lemmatizer_service.lemmatize
