@@ -1,7 +1,7 @@
 from dataclass_type_validator import dataclass_validate
 from dataclasses import dataclass, field
 from math import isnan
-from operator import gt, lt
+from operator import lt
 from helpers import is_sorted
 
 
