@@ -151,13 +151,13 @@ class ProductLookupService:
                     result.update(suggestions)
             return result
 
-        self.__autocomplete: AutoComplete = autocompleter.search
+        self.__autocomplete: Callable[[str], list[str]] = autocompleter.search
         self.__default_suggestions: tuple[Suggestion, ...] = default_suggestions
         self.__get_product_by_identifier = products.__getitem__
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
         self.__get_suggestions_by_words = get_suggestions_by_words
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
-        self.__tokenize: Callable[[str], Iterable[str]] = compose(lemmatize, partial(map, first))
+        #self.__tokenize: Callable[[str], Iterable[str]] = compose(lemmatize, partial(map, first))
 
         print(f'Product look-up service initialization completed.')
 
@@ -169,7 +169,7 @@ class ProductLookupService:
     def __get_products_from_query(self, query: str) -> Optional[Iterable[Suggestion]]:
         if not query:
             return None
-        terms = self.__tokenize(query)
+        terms = LemmatizerService.tokenize(query)#self.__tokenize(query)
         suggestion_sets = (self.__get_suggestions_by_words(word)
                            for word in (self.__autocomplete(term)
                                         for term in terms))
