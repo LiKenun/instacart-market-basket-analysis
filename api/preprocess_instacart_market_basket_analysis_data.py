@@ -1,14 +1,21 @@
+from ast import literal_eval
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
+import csv
+from dataclasses import astuple, fields, is_dataclass
 from efficient_apriori import apriori, Rule
 from functools import partial
+import html
+from io import TextIOBase, TextIOWrapper
 from itertools import chain, starmap
+import lzma
+from lzma import LZMAFile
 import os.path as path
 from os.path import abspath
 from toolz import apply, compose_left, drop, first, peek, second, thread_last
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, IO, Iterable, Optional
 from zipfile import ZipFile
-from helpers import read_csv, read_txt, unescape, write_compressed_csv, write_compressed_txt
+from helpers import read_csv
 
 
 def _parse_args() -> tuple[str, Optional[str], Optional[float], Optional[float], str]:
@@ -63,7 +70,7 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
     print(' Loading products…')
     products = thread_last('products.csv.zip',
                            read_csv_in_zip,
-                           create_transform({'product_id': int, 'product_name': unescape}),
+                           create_transform({'product_id': int, 'product_name': _unescape}),
                            (filter, lambda product: product.product_id not in exclusions),
                            partial(sorted, key=second))
     print(f' Loaded {len(products):,} products; excluded {len(exclusions):,} products.')
@@ -103,18 +110,86 @@ def _dump(directory: str, products: tuple[str], rules: tuple[Rule]) -> None:
     products_path = path.join(directory, 'products.txt.xz')
     rules_path = path.join(directory, 'association_rules.tsv.xz')
     print(f' Writing {len(products):,} products to {products_path}…')
-    write_compressed_txt(products_path, products)
+    _write_compressed_txt(products_path, products)
     print(f' Writing {len(rules):,} rules to {rules_path}…')
-    write_compressed_csv(rules_path,
-                         ('antecedent_items', 'consequent_items', 'measure'),
-                         (map(repr, (sorted(rule.lhs), sorted(rule.rhs), (rule.lift, rule.support)))
-                          for rule in sorted(rules, key=lambda rule: (rule.lhs, rule.rhs))))
+    _write_compressed_csv(rules_path,
+                          ('antecedent_items', 'consequent_items', 'measure'),
+                          (map(repr, (sorted(rule.lhs), sorted(rule.rhs), (rule.lift, rule.support)))
+                           for rule in sorted(rules, key=lambda rule: (rule.lhs, rule.rhs))))
+
+
+def _is_namedtuple_instance(value: Any) -> bool:
+    return (isinstance(value, tuple) and
+            hasattr(value, '_fields') and
+            isinstance(value._fields, tuple) and
+            all(type(item) == str for item in value._fields))
+
+
+def _read_txt(file: IO[bytes] | str | TextIOBase) -> Iterable[str]:
+    with open(file, encoding='utf-8') as stream:
+        for line in stream:
+            yield line.rstrip()
+
+
+def _unescape(value: str) -> str:
+    return html.unescape(literal_eval(f'"{value}"'))
+
+
+def _write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
+    writer = csv.writer(file, dialect=csv.unix_dialect, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
+    if column_names is None:
+        first_row, iterator = peek(data)
+        if isinstance(first_row, dict):
+            column_names = first_row.keys()
+            rows = (map(row.get, column_names) for row in iterator)
+        elif is_dataclass(first_row):
+            column_names = (field.name for field in fields(first_row))
+            rows = map(astuple, iterator)
+        elif _is_namedtuple_instance(first_row):
+            column_names = first_row._fields
+            rows = iterator
+        elif isinstance(first_row, Iterable):
+            column_names = first_row
+            rows = iterator
+        else:
+            column_names = tuple(vars(first_row).keys())
+            rows = (map(partial(getattr, row), column_names) for row in iterator)
+    else:
+        rows = data
+    writer.writerow(column_names)
+    writer.writerows(rows)
+
+
+def _write_compressed_csv(file: IO[bytes] | str, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
+    with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream:
+        _write_csv(stream, column_names, data, delimiter)
+
+
+def _write_compressed_txt(file: IO[bytes] | str, data: Iterable[str]) -> None:
+    with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream, \
+         TextIOWrapper(stream, encoding='utf-8', newline='\n') as text_stream:
+        text_stream.writelines(map(lambda line: line + '\n', data))
+
+
+def _write_csv(file: IO[bytes] | str | TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
+        -> None:
+    if isinstance(file, TextIOBase):
+        _write_csv_to_text_stream(file, column_names, data, delimiter)
+    else:
+        if isinstance(file, str):
+            with open(file, 'wt', encoding='utf-8', newline='') as stream:
+                _write_csv(stream, column_names, data)
+        else:
+            with TextIOWrapper(file, encoding='utf-8', newline='') as stream:
+                _write_csv(stream, column_names, data)
 
 
 def run() -> None:
     input_path, exclusions_path, minsupport, minconf, output_path = _parse_args()
     print(f'Loading exclusions from {exclusions_path}…')
-    exclusions = frozenset(map(int, read_txt(exclusions_path))
+    exclusions = frozenset(map(int, _read_txt(exclusions_path))
                            if exclusions_path is not None
                            else ())
     print(f'Preprocessing data from file {input_path}…')
