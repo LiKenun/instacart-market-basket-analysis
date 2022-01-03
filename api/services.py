@@ -181,7 +181,7 @@ class ProductLookupService:
             return frozenset()
         for suggestions in suggestion_sets:
             results.intersection_update(suggestions)
-        return sorted(results)
+        return results
 
     def get_suggestions(self, basket: Iterable[int] = frozenset(), query: str = '') -> list[Suggestion]:
         # Determine what to get suggestions for; execute only the code necessary to fulfill the request.
@@ -199,9 +199,11 @@ class ProductLookupService:
             case True, False:  # No query, but there were some basket suggestions
                 suggestions = chain(basket_suggestions, self.__default_suggestions)
             case False, True:  # Possible query results, but basket suggestions came up empty
-                suggestions = query_suggestions
+                suggestions = sorted(query_suggestions)
             case _:  # Possible query results, and also basket suggestions
-                suggestions = chain(query_suggestions, basket_suggestions)
+                query_products = frozenset(map(lambda suggestion: suggestion.product, query_suggestions))
+                suggestions = filter(lambda suggestion: suggestion.product in query_products,
+                                     chain(basket_suggestions, self.__default_suggestions))
 
         # Filter for 10 unique products.
         unique_suggestions = unique(suggestions, lambda suggestion: suggestion.product)
