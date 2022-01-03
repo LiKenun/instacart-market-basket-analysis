@@ -1,4 +1,5 @@
 import csv
+from dataclasses import is_dataclass
 from functools import partial
 from io import TextIOBase, TextIOWrapper
 from itertools import groupby, starmap, zip_longest
@@ -17,6 +18,8 @@ class SupportsLessThan(Protocol):
 
 def create_csv_to_dataclass_mapper(data_class: Type[T], transform: dict[str, Callable[[str], Any]] = {}) \
         -> Callable[[Iterable[Sequence[str]]], Iterable[T]]:
+    if not is_dataclass(data_class):
+        raise TypeError('Argument \'data_class\' is not a dataclass.')
     init_args = tuple(data_class.__annotations__.keys())
     transform = tuple(transform.get(arg, identity)
                       for arg in init_args)
