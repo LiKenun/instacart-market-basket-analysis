@@ -1,7 +1,6 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
 from itertools import chain, filterfalse, starmap
-import re
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
@@ -10,20 +9,10 @@ from toolz import compose_left as compose, identity, juxt, mapcat, merge_sorted,
 from typing import Callable, Iterable, Optional
 from models import Product, Suggestion
 from repositories import ProductRepository, RuleRepository
-from helpers import create_grouper, create_sorter, first, second, star, zipapply
+from helpers import create_grouper, create_sorter, first, second, star, tokenize, zipapply
 
 
 class LemmatizerService:
-    __numeric_re = r'(?:\d+|\d{1,3}(?:,\d{3})+)(?:(\.|,)\d+)?'
-    tokenize: Callable[[str], Iterable[str]] = \
-        compose(re.compile('|'.join((fr'(?:(?<=^)|(?<=[\s(]))(?:#|No.?\s*){__numeric_re}\+?(?=,?\s|\)|$)',
-                                     fr'(?:(?<=^)|(?<=[\s(])){__numeric_re}(?:(?:\'s|["\'+])|\s*(?:%|c(?:oun)t\.?|cups?'
-                                     r'|(?:fl\.?\s)?oz\.?|in(?:\.|ch(?:es)?)?|lbs?\.?|mgs?\.?|only|ounces?|p(?:ac)?k'
-                                     r'|pcs?\.?|pieces?|pounds?|size|x))?(?=,?\s|\)|$)',
-                                     r'[^\s!"&()+,\-./:;?\[\]{}][^\s!"()+\-/:;?\[\]{}]*[^\s!"()+,\-./:;?\[\]{}®™]')))
-                  .finditer,
-                partial(map, re.Match.group))
-
     def __init__(self):
         from nltk import download
         from nltk.corpus import stopwords, wordnet as wn
@@ -69,7 +58,7 @@ class LemmatizerService:
 
         self.lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
             compose(str.lower,
-                    LemmatizerService.tokenize,
+                    tokenize,
                     partial(filterfalse, is_stopword),
                     tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
                     pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
@@ -199,7 +188,7 @@ class ProductLookupService:
     def __get_products_from_query(self, query: str) -> Optional[Iterable[Suggestion]]:
         if not query:
             return None
-        terms = LemmatizerService.tokenize(query)
+        terms = tokenize(query)
         suggestion_sets = (self.__get_suggestions_by_words(word)
                            for word in (self.__autocomplete(term)
                                         for term in terms))

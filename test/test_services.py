@@ -7,15 +7,10 @@ from services import *
 
 class TestServices(unittest.TestCase):
     def test_LemmatizerService(self):
-        with self.subTest('tokenize'):
-            with self.subTest('“apples, bananas, and carrots” tokenizes to {“apples”, “bananas”, “and”, “carrots”}'):
-                self.assertSequenceEqual(tuple(LemmatizerService.tokenize('apples, bananas, and carrots')),
-                                         ('apples', 'bananas', 'and', 'carrots'))
-        with self.subTest('lemmatize'):
-            lemmatizer_service = LemmatizerService()
-            with self.subTest('“apples, bananas, and carrots” produces lemmas {“apple”, “banana”, “carrot”}'):
-                self.assertSequenceEqual(tuple(lemmatizer_service.lemmatize('apples, bananas, and carrots')),
-                                         (('apple', 'apples'), ('banana', 'bananas'), ('carrot', 'carrots')))
+        lemmatizer_service = LemmatizerService()
+        with self.subTest('“apples, bananas, and carrots” produces lemmas {“apple”, “banana”, “carrot”}'):
+            self.assertSequenceEqual(tuple(lemmatizer_service.lemmatize('apples, bananas, and carrots')),
+                                     (('apple', 'apples'), ('banana', 'bananas'), ('carrot', 'carrots')))
 
     def test_ProductLookupService(self):
         # The products are sorted in descending order (by identifier).

@@ -5,7 +5,8 @@ from io import TextIOBase, TextIOWrapper
 from itertools import groupby, starmap, zip_longest
 import lzma
 from operator import ne
-from toolz import apply, drop, identity, peek
+import re
+from toolz import apply, compose_left as compose, drop, identity, peek
 from typing import Any, Callable, IO, Iterable, Optional, Protocol, Sequence, Type, TypeVar
 
 T = TypeVar('T')
@@ -81,6 +82,17 @@ def second(sequence: Sequence[T]) -> T:
 
 def star(function: Callable, arguments: Iterable) -> Any:
     return function(*arguments)
+
+
+tokenize: Callable[[str], Iterable[str]] = \
+    compose(re.compile('|'.join((r'(?:(?<=^)|(?<=[\s(]))(?:#|No.?\s*){numeric_re}\+?(?=,?\s|\)|$)',
+                                 r'(?:(?<=^)|(?<=[\s(])){numeric_re}(?:(?:\'s|["\'+])|\s*(?:%|c(?:oun)?t\.?|cups?'
+                                 r'|(?:fl\.?\s)?oz\.?|in(?:\.|ch(?:es)?)?|lbs?\.?|mgs?\.?|only|ounces?|p(?:ac)?k'
+                                 r'|pcs?\.?|pieces?|pounds?|size|x))?(?=,?\s|\)|$)',
+                                 r'[^\s!"&()+,\-./:;?\[\]{{}}][^\s!"()+\-/:;?\[\]{{}}]*[^\s!"()+,\-./:;?\[\]{{}}®™]'))
+                          .format(numeric_re=r'(?:\d+|\d{{1,3}}(?:,\d{{3}})+)(?:(\.|,)\d+)?'))
+              .finditer,
+            partial(map, re.Match.group))
 
 
 def zipapply(functions: Iterable[Callable], arguments: Iterable) -> Iterable:
