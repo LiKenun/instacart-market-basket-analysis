@@ -90,6 +90,30 @@ class ProductLookupService:
         print(f'[{get_time_as_string()}]  Loaded {len(products):,} products.',
               file=sys.stderr)
 
+        # Association rules
+        print(f'[{get_time_as_string()}] Loading association rules from {rules_repository.rules_data_file}…',
+              file=sys.stderr)
+        rules = rules_repository.get_all_rules()
+        print(f'[{get_time_as_string()}]  Loaded {len(rules):,} association rules.',
+              file=sys.stderr)
+
+        # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
+        print(f'[{get_time_as_string()}] Creating association rule-based suggestions indexed by antecedent item sets…',
+              file=sys.stderr)
+        suggestions_by_antecedent_items = \
+            thread(rules,
+                   create_grouper(lambda rule: rule.antecedent_items),
+                   (map, partial(zipapply, (identity,
+                                            compose(partial(mapcat, lambda rule: ((item, rule.measure, rule.antecedent_items)
+                                                                                  for item in rule.consequent_items)),
+                                                    partial(starmap, Suggestion),
+                                                    sorted,
+                                                    tuple)))),
+                   SetTrieMap)
+        del rules
+        print(f'[{get_time_as_string()}]  Created association rule-based suggestions indexed by antecedent item sets.',
+              file=sys.stderr)
+
         print(f'[{get_time_as_string()}] Initializing autocompleter for product names…',
               file=sys.stderr)
         # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
@@ -113,30 +137,6 @@ class ProductLookupService:
                         identity),  # Unchanged dictionary to be passed on to AutoComplete as the synonyms argument
                    partial(star, AutoComplete))  # Calls the AutoComplete constructor with the two dictionaries
         print(f'[{get_time_as_string()}]  Initialized autocompleter for product names.',
-              file=sys.stderr)
-
-        # Association rules
-        print(f'[{get_time_as_string()}] Loading association rules from {rules_repository.rules_data_file}…',
-              file=sys.stderr)
-        rules = rules_repository.get_all_rules()
-        print(f'[{get_time_as_string()}]  Loaded {len(rules):,} association rules.',
-              file=sys.stderr)
-
-        # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
-        print(f'[{get_time_as_string()}] Creating association rule-based suggestions indexed by antecedent item sets…',
-              file=sys.stderr)
-        suggestions_by_antecedent_items = \
-            thread(rules,
-                   create_grouper(lambda rule: rule.antecedent_items),
-                   (map, partial(zipapply, (identity,
-                                            compose(partial(mapcat, lambda rule: ((item, rule.measure, rule.antecedent_items)
-                                                                                  for item in rule.consequent_items)),
-                                                    partial(starmap, Suggestion),
-                                                    sorted,
-                                                    tuple)))),
-                   SetTrieMap)
-        del rules
-        print(f'[{get_time_as_string()}]  Created association rule-based suggestions indexed by antecedent item sets.',
               file=sys.stderr)
 
         # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
