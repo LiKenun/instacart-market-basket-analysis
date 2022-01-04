@@ -18,36 +18,32 @@ class TestModels(unittest.TestCase):
                    (starmap, lambda index, name: Product(index, name)),
                    tuple)
         cls.rules = rules = \
-            (Rule((),   (0,),   Measure(1.0,                0.004533333333333334)),
-             Rule((),   (1,),   Measure(1.0,                0.007733333333333334)),
-             Rule((),   (2,),   Measure(1.0,                0.0116)),
-             Rule((),   (3,),   Measure(1.0,                0.005733333333333333)),
-             Rule((),   (4,),   Measure(1.0,                0.005866666666666667)),
-             Rule((),   (5,),   Measure(1.0,                0.0033333333333333335)),
-             Rule((),   (6,),   Measure(1.0,                0.0033333333333333335)),
-             Rule((),   (7,),   Measure(1.0,                0.021333333333333333)),
-             Rule((),   (8,),   Measure(1.0,                0.016)),
-             Rule((),   (9,),   Measure(1.0,                0.005333333333333333)),
-             Rule((),   (10,),  Measure(1.0,                0.0112)),
-             Rule((),   (11,),  Measure(1.0,                0.008)),
-             Rule((),   (12,),  Measure(1.0,                0.005066666666666666)),
-             Rule((0,),  (1,),  Measure(4.843304843304844,  0.004533333333333334)),
-             Rule((2,),  (3,),  Measure(3.7903273197390845, 0.005733333333333333)),
-             Rule((2,),  (4,),  Measure(4.700185158809287,  0.005866666666666667)),
-             Rule((4,),  (12,), Measure(4.514493901473151,  0.005066666666666666)),
-             Rule((5,),  (6,),  Measure(5.178127589063795,  0.0033333333333333335)),
-             Rule((7,),  (8,),  Measure(3.2915549671393096, 0.016)),
-             Rule((9,),  (7,),  Measure(3.840147461662528,  0.005333333333333333)),
-             Rule((10,), (1,),  Measure(3.120611639881417,  0.0032)),
-             Rule((10,), (11,), Measure(4.130221288078346,  0.008)))
+            (Rule((),              (products[0],),  Measure(1.0,                0.004533333333333334)),
+             Rule((),              (products[1],),  Measure(1.0,                0.007733333333333334)),
+             Rule((),              (products[2],),  Measure(1.0,                0.0116)),
+             Rule((),              (products[3],),  Measure(1.0,                0.005733333333333333)),
+             Rule((),              (products[4],),  Measure(1.0,                0.005866666666666667)),
+             Rule((),              (products[5],),  Measure(1.0,                0.0033333333333333335)),
+             Rule((),              (products[6],),  Measure(1.0,                0.0033333333333333335)),
+             Rule((),              (products[7],),  Measure(1.0,                0.021333333333333333)),
+             Rule((),              (products[8],),  Measure(1.0,                0.016)),
+             Rule((),              (products[9],),  Measure(1.0,                0.005333333333333333)),
+             Rule((),              (products[10],), Measure(1.0,                0.0112)),
+             Rule((),              (products[11],), Measure(1.0,                0.008)),
+             Rule((),              (products[12],), Measure(1.0,                0.005066666666666666)),
+             Rule((products[0],),  (products[1],),  Measure(4.843304843304844,  0.004533333333333334)),
+             Rule((products[2],),  (products[3],),  Measure(3.7903273197390845, 0.005733333333333333)),
+             Rule((products[2],),  (products[4],),  Measure(4.700185158809287,  0.005866666666666667)),
+             Rule((products[4],),  (products[12],), Measure(4.514493901473151,  0.005066666666666666)),
+             Rule((products[5],),  (products[6],),  Measure(5.178127589063795,  0.0033333333333333335)),
+             Rule((products[7],),  (products[8],),  Measure(3.2915549671393096, 0.016)),
+             Rule((products[9],),  (products[7],),  Measure(3.840147461662528,  0.005333333333333333)),
+             Rule((products[10],), (products[1],),  Measure(3.120611639881417,  0.0032)),
+             Rule((products[10],), (products[11],), Measure(4.130221288078346,  0.008)))
         cls.suggestions = \
             thread(rules,
-                   (map, lambda rule: (tuple(map(products.__getitem__, rule.consequent_items)),
-                                       rule.measure,
-                                       tuple(map(products.__getitem__, rule.antecedent_items)))),
-                   (starmap, lambda consequent_items, measure, antecedent_items:
-                                 ((consequent_item, measure, antecedent_items)
-                                  for consequent_item in consequent_items)),
+                   (map, lambda rule: ((consequent_item, rule.measure, rule.antecedent_items)
+                                       for consequent_item in rule.consequent_items)),
                    chain.from_iterable,
                    (starmap, Suggestion),
                    tuple)
@@ -76,23 +72,29 @@ class TestModels(unittest.TestCase):
 
     def test_Rule(self):
         with self.subTest('Unsorted antecedent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(range(10, 0, -1)),
-                                                       (11,),
+            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10, 0, -1))),
+                                                       (self.products[11],),
                                                        Measure(0.0, 0.0)))
         with self.subTest('Duplicate antecedent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((0, 1, 1),
-                                                       (14,),
+            self.assertRaises(ValueError, lambda: Rule((self.products[0], self.products[1], self.products[1]),
+                                                       (self.products[12],),
                                                        Measure(0.0, 0.0)))
         with self.subTest('No consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(range(10)), (), Measure(0.0, 0.0)))
+            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10))),
+                                                       (),
+                                                       Measure(0.0, 0.0)))
         with self.subTest('Unsorted consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((), tuple(range(10, 0, -1)), Measure(0.0, 0.0)))
+            self.assertRaises(ValueError, lambda: Rule((),
+                                                       tuple(map(self.products.__getitem__, range(10, 0, -1))),
+                                                       Measure(0.0, 0.0)))
         with self.subTest('Duplicate consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((11,),
-                                                       (0, 1, 1),
+            self.assertRaises(ValueError, lambda: Rule((self.products[11],),
+                                                       (self.products[0], self.products[1], self.products[1]),
                                                        Measure(0.0, 0.0)))
         with self.subTest('Any product which is both antecedent and consequent throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(range(10)), (0,), Measure(0.0, 0.0)))
+            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10))),
+                                                       (self.products[0],),
+                                                       Measure(0.0, 0.0)))
 
     def test_Suggestion(self):
         with self.subTest('Sorted sequence of suggestions sort in descending order of lift, then support and product'):
