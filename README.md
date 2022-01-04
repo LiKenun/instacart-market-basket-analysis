@@ -6,7 +6,7 @@ Grocery shopping and making a shopping list can be such a drag. This machine lea
 ## What You Need to Get This Up and Running
 
 There are three major groups of steps to be aware of:
- 1. Getting the software enviroment set up.
+ 1. Getting the software environment set up.
  2. Training a model from the data.
  3. Running the app.
 
@@ -33,7 +33,29 @@ With hardware requirements met, there are a few ways to get the app up and runni
 
 ![Screenshot](https://user-images.githubusercontent.com/65802312/147992569-0664b770-4dd4-45dc-829f-6c164bfcc1d2.png)
 
+### How it Works
+
+#### Mining
+
+The transactions data set is mined using the Apriori algorithm, an algorithm originally proposed by Rakesh Agrawal and Ramakrishnan Srikant in September 1994. The Apriori algorithm scans the transactions for frequent item sets (e.g.: bacon, egg, and cheese) and generates a set of *association rules*. Using these rules, an application can predict the likelihood of some items (*consequents*) being included in a transaction if some other items (*antecedents*) have already been included (e.g.: *bacon* and *egg* predicts *cheese*).
+
+#### Making Predictions
+
+To make predictions from the mined association rules, this application creates a set trie, mapping sets of antecedent items to sets of consequent items. When a list of antecedent items is provided as input, the set trie is queried for all sets which are subsets of the list, returning a set of consequent item sets which are then sorted by likelihood of inclusion.
+
+#### Text Queries
+
+For text query inputs, this application create a set trie mapping sets of words from the product name to products. When a text query is provided as input, the set trie is queried for all sets which are supersets of the query terms, returning a set of products which are then sorted by frequency in the transaction data. To reduce the memory usage of the set trie, words with the same root forms are collapsed into a single lemma and common stopwords are stripped out. Thus, *Chocolate Covered Strawberries* and *Strawberry Yogurt* are reduced to {*chocolate*, *cover*, *strawberry*} and {*strawberry*, *yogurt*} respectively—four unique words in total instead of five. 
+
+This application takes care of typos and near-matches by performing fuzzy text matching. During start-up, it initializes a graph structure (provided by a library) with all the words found in the product names.
+
+#### Predictive Text Queries
+
+When both antecedent items and text query terms are provided, the application intersects the two sets of results. Thus, the suggestions given are all products which match the text query and have the highest likelihood of being included based on the antecedent items.
+
 ### Libraries/frameworks
+
+This project was made possible with some great libraries:
 
 * [Efficient-Apriori](https://github.com/tommyod/Efficient-Apriori) for mining the data set
 * [Natural Language Toolkit (NLTK)](https://www.nltk.org/) to perform dimensionality reduction on product names
@@ -44,4 +66,4 @@ With hardware requirements met, there are a few ways to get the app up and runni
 * [dataclass-type-validator](https://github.com/levii/dataclass-type-validator) for …the obvious
 * [React](https://reactjs.org/) for the client-side user interface
 
-Each of those libraries/frameworks obviously depend on yet more libraries/frameworks. It’s a deep rabbit hole. 🐰
+Each of those libraries/frameworks obviously depend on yet more libraries/frameworks. It’s a deep rabbit hole, …and I will not. 🐰
