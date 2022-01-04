@@ -83,22 +83,26 @@ class ProductLookupService:
     def __init__(self, product_repository: ProductRepository, rules_repository: RuleRepository,
                  lemmatizer_service: LemmatizerService) -> None:
         get_time_as_string = compose(time, ctime)
+
+        print(f'[{get_time_as_string()}] Initializing ProductLookupService…',
+              file=sys.stderr)
+
         # Index of product identifiers to product names
-        print(f'[{get_time_as_string()}] Loading products from {product_repository.products_data_file}…',
+        print(f'[{get_time_as_string()}]  Loading products from {product_repository.products_data_file}…',
               file=sys.stderr)
         products = product_repository.get_all_products()
-        print(f'[{get_time_as_string()}]  Loaded {len(products):,} products.',
+        print(f'[{get_time_as_string()}]   Loaded {len(products):,} products.',
               file=sys.stderr)
 
         # Association rules
-        print(f'[{get_time_as_string()}] Loading association rules from {rules_repository.rules_data_file}…',
+        print(f'[{get_time_as_string()}]  Loading association rules from {rules_repository.rules_data_file}…',
               file=sys.stderr)
         rules = rules_repository.get_all_rules()
-        print(f'[{get_time_as_string()}]  Loaded {len(rules):,} association rules.',
+        print(f'[{get_time_as_string()}]   Loaded {len(rules):,} association rules.',
               file=sys.stderr)
 
         # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
-        print(f'[{get_time_as_string()}] Creating association rule-based suggestions indexed by antecedent item sets…',
+        print(f'[{get_time_as_string()}]  Creating association rule-based suggestions indexed by antecedent item sets…',
               file=sys.stderr)
         suggestions_by_antecedent_items = \
             thread(rules,
@@ -111,19 +115,49 @@ class ProductLookupService:
                                                     tuple)))),
                    SetTrieMap)
         del rules
-        print(f'[{get_time_as_string()}]  Created association rule-based suggestions indexed by antecedent item sets.',
+        print(f'[{get_time_as_string()}]   Created association rule-based suggestions indexed by antecedent item sets.',
               file=sys.stderr)
 
-        print(f'[{get_time_as_string()}] Initializing autocompleter for product names…',
+        # Lemmas of product names
+        print(f'[{get_time_as_string()}]  Lemmatizing product names…',
+              file=sys.stderr)
+        product_lemmas_dict = \
+            thread(products,
+                   (map, juxt(identity,
+                              lambda product: tuple(lemmatizer_service.lemmatize(product.name)))),
+                   dict)
+        print(f'[{get_time_as_string()}]   Lemmatized product names.',
+              file=sys.stderr)
+
+        # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
+        default_suggestions = suggestions_by_antecedent_items.get(())
+
+        # Index of sets of products by words in product names (maps sets of words to sorted sets of Suggestions)
+        print(f'[{get_time_as_string()}]  Creating search index by product name…',
+              file=sys.stderr)
+        suggestions_by_word = \
+            thread(default_suggestions,
+                   (map, juxt(compose(lambda suggestion: product_lemmas_dict[suggestion.product],
+                                      partial(map, first),
+                                      unique,
+                                      tuple),
+                              identity)),
+                   create_sorter(first),  # Sort by Product word set.
+                   create_grouper(first),  # Group by Product word set; it’s possible that several Products share a set.
+                   (starmap, lambda words, pairs: (words, tuple(sorted(map(second, pairs))))),
+                   SetTrieMap)
+
+        print(f'[{get_time_as_string()}]   Created search index by product name.',
+              file=sys.stderr)
+
+        print(f'[{get_time_as_string()}]  Initializing autocompleter for product names…',
               file=sys.stderr)
         # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
         empty_dictionary = {}
 
         # Autocompletion engine for text queries using words from product names
         autocompleter = \
-            thread(products,
-                   (map, lambda product: product.name),
-                   (map, lemmatizer_service.lemmatize),
+            thread(product_lemmas_dict.values(),
                    chain.from_iterable,  # Flattens the iterable of iterables into an iterable of tuples (lemma & word)
                    create_sorter(lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma before grouping
                    create_grouper(first),  # Groups words by their shared lemmas
@@ -136,25 +170,7 @@ class ProductLookupService:
                    juxt(partial(valmap, lambda synonyms: empty_dictionary),  # Words with empty context dictionaries
                         identity),  # Unchanged dictionary to be passed on to AutoComplete as the synonyms argument
                    partial(star, AutoComplete))  # Calls the AutoComplete constructor with the two dictionaries
-        print(f'[{get_time_as_string()}]  Initialized autocompleter for product names.',
-              file=sys.stderr)
-
-        # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
-        default_suggestions = suggestions_by_antecedent_items.get(())
-
-        # Index of sets of products by words in product names (maps sets of words to sorted sets of Suggestions)
-        print(f'[{get_time_as_string()}] Creating search index by product name…',
-              file=sys.stderr)
-        suggestions_by_word = \
-            thread(default_suggestions,
-                   (map, lambda suggestion: (tuple(unique(map(first, lemmatizer_service.lemmatize(suggestion.product.name)))),  # TODO: Replace with juxt and compose
-                                             suggestion)),
-                   create_sorter(first),  # Sort by Product word set.
-                   create_grouper(first),  # Group by Product word set; it’s possible that several Products share a set.
-                   (starmap, lambda words, pairs: (words, tuple(sorted(map(second, pairs))))),
-                   SetTrieMap)
-
-        print(f'[{get_time_as_string()}] Product look-up service initialization completed.',
+        print(f'[{get_time_as_string()}]   Initialized autocompleter for product names.',
               file=sys.stderr)
 
         # Private instance fields
@@ -171,6 +187,9 @@ class ProductLookupService:
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
         self.__get_suggestions_by_words = get_suggestions_by_words
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
+
+        print(f'[{get_time_as_string()}]  Initialized ProductLookupService.',
+              file=sys.stderr)
 
     def __get_basket_suggestions(self, basket: frozenset[Product]) -> Optional[Iterable[Suggestion]]:
         if not self.__has_suggestions_by_antecedent_items(basket):
