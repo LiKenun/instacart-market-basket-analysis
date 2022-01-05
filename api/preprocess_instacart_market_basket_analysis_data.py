@@ -7,15 +7,71 @@ from efficient_apriori import apriori, Rule
 from functools import partial
 import html
 from io import TextIOBase, TextIOWrapper
-from itertools import chain, starmap
+from itertools import chain, filterfalse, starmap
 import lzma
 from lzma import LZMAFile
+from nltk import download
+from nltk.corpus import stopwords, wordnet as wn
+from nltk.data import find
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.tag import pos_tag
 import os.path as path
 from os.path import abspath
-from toolz import apply, compose_left, drop, first, peek, second, thread_last
+from toolz import apply, compose_left as compose, first, identity, juxt, second, thread_last as thread, unique
 from typing import Any, Callable, IO, Iterable, Optional
 from zipfile import ZipFile
-from helpers import read_csv
+from helpers import create_sorter, read_csv, tokenize
+
+
+def _ensure_nltk_data(names: Iterable[str]) -> None:
+    for name in names:
+        try:
+            find(name)
+        except LookupError:
+            download(path.basename(name))
+
+
+_ensure_nltk_data(('corpora/omw-1.4', 'corpora/stopwords', 'corpora/wordnet', 'taggers/averaged_perceptron_tagger',
+                   'tokenizers/punkt'))
+_lemmatizer = WordNetLemmatizer()
+
+
+def _map_to_wordnet_pos(words: Iterable[tuple[str, str]]) -> Iterable[tuple[str] | tuple[str, str]]:
+    for word, pos in words:
+        match pos:
+            case 'JJ' | 'JJR' | 'JJS' | 'PDT' | 'RP':
+                yield word, wn.ADJ
+            case 'CD' | 'NN' | 'NNS' | 'NNP' | 'NNPS':
+                yield word, wn.NOUN
+            case 'VB' | 'VBD' | 'VBG' | 'VBN' | 'VBP' | 'VBZ':
+                yield word, wn.VERB
+            case 'EX' | 'IN' | 'RB' | 'RBR' | 'RBS':
+                yield word, wn.ADV
+            case _:  # Other tags have no equivalent in WordNet.
+                yield word, None
+
+
+def _lemmatize_tagged_words(tagged_words: Iterable[tuple[str, Optional[str]]]) \
+        -> Iterable[tuple[str, Optional[str]]]:
+    for word, pos in tagged_words:
+        if pos is not None and word != (lemma := _lemmatizer.lemmatize(word, pos)):
+            yield lemma, word  # The lemmatized form takes precedence over the original.
+        else:
+            yield word, None
+
+
+_lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
+    compose(str.lower,
+            tokenize,
+            partial(filterfalse, frozenset(stopwords.words('english')).__contains__),  # Filter out stop words.
+            tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
+            pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
+            _map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
+            _lemmatize_tagged_words,
+            create_sorter(lambda lemma_word_pair: lemma_word_pair
+                                                  if lemma_word_pair[1]
+                                                  else (lemma_word_pair[0],)),
+            unique)
 
 
 def _parse_args() -> tuple[str, Optional[str], Optional[float], Optional[float], str]:
@@ -57,38 +113,38 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
 
     def create_transform(transform: dict[str, Callable[[str], Any]]) -> Callable[[Iterable[list[str]]], Iterable[tuple]]:
         def function(iterable: Iterable[list[str]]) -> Iterable[tuple]:
-            header_row, iterable = peek(iterable)
+            header_row = next(iterable := iter(iterable))
             indices_to_extract, functions_to_apply = zip(*map({column_name: (index, transform[column_name])
                                                                for index, column_name in enumerate(header_row)
                                                                if column_name in transform}.get,
                                                               transform))
             namedtuple_type = namedtuple('AnonymousNamedTuple', transform)
-            for row in drop(1, iterable):
+            for row in iterable:
                 yield namedtuple_type(*starmap(apply, zip(functions_to_apply, map(lambda _: row[_], indices_to_extract))))
         return function
 
     print(' Loading products…')
-    products = thread_last('products.csv.zip',
-                           read_csv_in_zip,
-                           create_transform({'product_id': int, 'product_name': _unescape}),
-                           (filter, lambda product: product.product_id not in exclusions),
-                           partial(sorted, key=second))
-    print(f' Loaded {len(products):,} products; excluded {len(exclusions):,} products.')
+    products: list[tuple[int, str]] = \
+        thread('products.csv.zip',
+               read_csv_in_zip,
+               create_transform({'product_id': int, 'product_name': _unescape}),
+               (filter, lambda product: product.product_id not in exclusions),
+               partial(sorted, key=second))
+    print(f'  Loaded {len(products):,} products; excluded {len(exclusions):,} products.')
     orders = filter(lambda item: item.product_id not in exclusions,
-                    chain.from_iterable(map(compose_left(read_csv_in_zip,
-                                                         create_transform({'product_id': int, 'order_id': int})),
+                    chain.from_iterable(map(compose(read_csv_in_zip,
+                                                    create_transform({'product_id': int, 'order_id': int})),
                                             ('order_products__prior.csv.zip', 'order_products__train.csv.zip'))))
-    print(' Creating product identifier mapper…')
-    map_product_identifier = dict(map(compose_left(reversed, tuple), enumerate(map(first, products)))).get
+    map_product_identifier = dict(map(compose(reversed, tuple), enumerate(map(first, products)))).get
     print(' Creating transactions list…')
-    transactions = defaultdict(set)
+    transactions: defaultdict[str, set[int]] = defaultdict(set)
     for order in orders:
         transactions[order.order_id].add(map_product_identifier(order.product_id))
-    print(f' Generated a list of {len(transactions):,} transactions.')
+    print(f'  Generated a list of {len(transactions):,} transactions.')
     return tuple(map(second, products)), tuple(map(tuple, transactions.values()))
 
 
-def _train(transactions: Iterable[tuple[int]], min_support: Optional[float] = None,
+def _train(transactions: tuple[tuple[int]], min_support: Optional[float] = None,
            min_confidence: Optional[float] = None) -> tuple[Rule]:
     product_counts = Counter(chain.from_iterable(transactions))
     transaction_count = len(transactions)
@@ -106,11 +162,15 @@ def _train(transactions: Iterable[tuple[int]], min_support: Optional[float] = No
     return tuple(chain(null_base_rules, filter(lambda rule: rule.lift > 1, rules)))
 
 
-def _dump(directory: str, products: tuple[str], rules: tuple[Rule]) -> None:
+def _dump(directory: str, products: tuple[tuple[str, list[tuple[str, Optional[str]]]]], rules: tuple[Rule]) -> None:
     products_path = path.join(directory, 'products.txt.xz')
     rules_path = path.join(directory, 'association_rules.tsv.xz')
     print(f' Writing {len(products):,} products to {products_path}…')
-    _write_compressed_txt(products_path, products)
+    _write_compressed_csv(products_path,
+                          None,
+                          thread(products,
+                                 (starmap, lambda product_name, lemma_word_pairs: (product_name,
+                                                                                   repr(lemma_word_pairs)))))
     print(f' Writing {len(rules):,} rules to {rules_path}…')
     _write_compressed_csv(rules_path,
                           ('antecedent_items', 'consequent_items', 'measure'),
@@ -139,7 +199,7 @@ def _write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable]
         -> None:
     writer = csv.writer(file, dialect=csv.unix_dialect, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
     if column_names is None:
-        first_row, iterator = peek(data)
+        first_row = next(iterator := iter(data))
         if isinstance(first_row, dict):
             column_names = first_row.keys()
             rows = (map(row.get, column_names) for row in iterator)
@@ -195,12 +255,17 @@ def run() -> None:
     print(f'Preprocessing data from file {input_path}…')
     with ZipFile(input_path) as archive:
         products, transactions = _preprocess(archive, exclusions)
+    del exclusions
+    print('Lemmatizing product names…')
+    products_with_lemmas = thread(products,
+                                  (map, juxt(identity, compose(_lemmatize, list))),
+                                  tuple)
+    del products
     print('Training…')
     rules = _train(transactions, minsupport, minconf)
     del transactions
     print(f'Saving products and rules to {output_path}…')
-    _dump(output_path, products, rules)
-    print('Done.')
+    _dump(output_path, products_with_lemmas, rules)
 
 
 if __name__ == '__main__':

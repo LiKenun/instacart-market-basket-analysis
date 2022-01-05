@@ -1,6 +1,6 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
-from itertools import chain, filterfalse, starmap
+from itertools import chain, starmap
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
@@ -12,75 +12,11 @@ from repositories import ProductRepository, RuleRepository
 from helpers import create_grouper, create_sorter, first, second, star, tokenize, zipapply
 
 
-class LemmatizerService:
-    def __init__(self):
-        from nltk import download
-        from nltk.corpus import stopwords, wordnet as wn
-        from nltk.data import find
-        from nltk.stem.wordnet import WordNetLemmatizer
-        from nltk.tag import pos_tag
-        from os.path import basename
-
-        def ensure_nltk_data(names: Iterable[str]) -> None:
-            for name in names:
-                try:
-                    find(name)
-                except LookupError:
-                    download(basename(name))
-
-        ensure_nltk_data(('corpora/omw-1.4', 'corpora/stopwords', 'corpora/wordnet',
-                          'taggers/averaged_perceptron_tagger',
-                          'tokenizers/punkt'))
-        is_stopword = frozenset(stopwords.words('english')).__contains__
-        lemmatizer = WordNetLemmatizer()
-
-        def map_to_wordnet_pos(words: Iterable[tuple[str, str]]) -> Iterable[tuple[str] | tuple[str, str]]:
-            for word, pos in words:
-                match pos:
-                    case 'JJ' | 'JJR' | 'JJS' | 'PDT' | 'RP':
-                        yield word, wn.ADJ
-                    case 'CD' | 'NN' | 'NNS' | 'NNP' | 'NNPS':
-                        yield word, wn.NOUN
-                    case 'VB' | 'VBD' | 'VBG' | 'VBN' | 'VBP' | 'VBZ':
-                        yield word, wn.VERB
-                    case 'EX' | 'IN' | 'RB' | 'RBR' | 'RBS':
-                        yield word, wn.ADV
-                    case _:  # Other tags have no equivalent in WordNet.
-                        yield word, None
-
-        def lemmatize_tagged_words(tagged_words: Iterable[tuple[str, Optional[str]]]) \
-                -> Iterable[tuple[str, Optional[str]]]:
-            for word, pos in tagged_words:
-                if pos is not None and word != (lemma := lemmatizer.lemmatize(word, pos)):
-                    yield lemma, word  # The lemmatized form takes precedence over the original.
-                else:
-                    yield word, None
-
-        self.lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
-            compose(str.lower,
-                    tokenize,
-                    partial(filterfalse, is_stopword),
-                    tuple,  # The next function does not work with Iterables, so it needs to be converted into a tuple.
-                    pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
-                    map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
-                    lemmatize_tagged_words,
-                    create_sorter(first),
-                    unique)
-
-
 class ProductLookupService:
-    def __init__(self, product_repository: ProductRepository, rules_repository: RuleRepository,
-                 lemmatizer_service: LemmatizerService) -> None:
+    def __init__(self, product_repository: ProductRepository, rules_repository: RuleRepository) -> None:
         get_time_as_string = compose(time, ctime)
 
         print(f'[{get_time_as_string()}] Initializing ProductLookupService…',
-              file=sys.stderr)
-
-        # Index of product identifiers to product names
-        print(f'[{get_time_as_string()}]  Loading products from {product_repository.products_data_file}…',
-              file=sys.stderr)
-        products = product_repository.get_all_products()
-        print(f'[{get_time_as_string()}]   Loaded {len(products):,} products.',
               file=sys.stderr)
 
         # Association rules
@@ -107,15 +43,12 @@ class ProductLookupService:
         print(f'[{get_time_as_string()}]   Created association rule-based suggestions indexed by antecedent item sets.',
               file=sys.stderr)
 
-        # Lemmas of product names
-        print(f'[{get_time_as_string()}]  Lemmatizing product names…',
+        # Dictionary of Product to lemma-word pairs and tuple of Products indexed by product identifier
+        print(f'[{get_time_as_string()}]  Loading products from {product_repository.products_data_file}…',
               file=sys.stderr)
-        product_lemmas_dict = \
-            thread(products,
-                   (map, juxt(identity,
-                              lambda product: tuple(lemmatizer_service.lemmatize(product.name)))),
-                   dict)
-        print(f'[{get_time_as_string()}]   Lemmatized product names.',
+        product_lemmas_dict = product_repository.get_all_products()
+        products = tuple(product_lemmas_dict)
+        print(f'[{get_time_as_string()}]   Loaded {len(products):,} products.',
               file=sys.stderr)
 
         # Default product suggestions sorted in descending order of support (lift being exactly 1.0 for all Suggestions)
@@ -148,6 +81,7 @@ class ProductLookupService:
         autocompleter = \
             thread(product_lemmas_dict.values(),
                    chain.from_iterable,  # Flattens the iterable of iterables into an iterable of tuples (lemma & word)
+                   unique,
                    create_sorter(lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma before grouping
                    create_grouper(first),  # Groups words by their shared lemmas
                    (map, partial(zipapply, (identity,  # Passes the lemma through unchanged
@@ -230,4 +164,4 @@ class ProductLookupService:
         return list(take(10, unique_suggestions))
 
 
-__all__ = ('LemmatizerService', 'ProductLookupService')
+__all__ = ('ProductLookupService',)
