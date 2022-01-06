@@ -1,6 +1,4 @@
-from dataclass_type_validator import TypeValidationError
-from itertools import chain, starmap
-from math import nan
+import numpy as np
 from toolz import thread_last as thread
 import unittest
 from models import *
@@ -9,100 +7,54 @@ from models import *
 class TestModels(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # The products are sorted in descending order (by identifier).
-        # These are taken from https://www.javatpoint.com/apriori-algorithm-in-machine-learning
-        cls.products = products = \
-            thread(('Chicken', 'Light Cream', 'Escalope', 'Mushroom Cream Sauce', 'Pasta', 'Fromage Blanc', 'Honey',
-                   'Ground Beef', 'Herb & Pepper', 'Tomato Sauce', 'Olive Oil', 'Whole Wheat Pasta', 'Shrimp'),
-                   enumerate,
-                   (starmap, lambda index, name: Product(index, name)),
-                   tuple)
-        cls.rules = rules = \
-            (Rule((),              (products[0],),  Measure(1.0,                0.004533333333333334)),
-             Rule((),              (products[1],),  Measure(1.0,                0.007733333333333334)),
-             Rule((),              (products[2],),  Measure(1.0,                0.0116)),
-             Rule((),              (products[3],),  Measure(1.0,                0.005733333333333333)),
-             Rule((),              (products[4],),  Measure(1.0,                0.005866666666666667)),
-             Rule((),              (products[5],),  Measure(1.0,                0.0033333333333333335)),
-             Rule((),              (products[6],),  Measure(1.0,                0.0033333333333333335)),
-             Rule((),              (products[7],),  Measure(1.0,                0.021333333333333333)),
-             Rule((),              (products[8],),  Measure(1.0,                0.016)),
-             Rule((),              (products[9],),  Measure(1.0,                0.005333333333333333)),
-             Rule((),              (products[10],), Measure(1.0,                0.0112)),
-             Rule((),              (products[11],), Measure(1.0,                0.008)),
-             Rule((),              (products[12],), Measure(1.0,                0.005066666666666666)),
-             Rule((products[0],),  (products[1],),  Measure(4.843304843304844,  0.004533333333333334)),
-             Rule((products[2],),  (products[3],),  Measure(3.7903273197390845, 0.005733333333333333)),
-             Rule((products[2],),  (products[4],),  Measure(4.700185158809287,  0.005866666666666667)),
-             Rule((products[4],),  (products[12],), Measure(4.514493901473151,  0.005066666666666666)),
-             Rule((products[5],),  (products[6],),  Measure(5.178127589063795,  0.0033333333333333335)),
-             Rule((products[7],),  (products[8],),  Measure(3.2915549671393096, 0.016)),
-             Rule((products[9],),  (products[7],),  Measure(3.840147461662528,  0.005333333333333333)),
-             Rule((products[10],), (products[1],),  Measure(3.120611639881417,  0.0032)),
-             Rule((products[10],), (products[11],), Measure(4.130221288078346,  0.008)))
-        cls.suggestions = \
-            thread(rules,
-                   (map, lambda rule: ((consequent_item, rule.measure, rule.antecedent_items)
-                                       for consequent_item in rule.consequent_items)),
-                   chain.from_iterable,
-                   (starmap, Suggestion),
-                   tuple)
-
-    def test_Measure(self):
-        with self.subTest('Negative lift throws ValueError'):
-            self.assertRaises(ValueError, lambda: Measure(-0.1, 0.0))
-        with self.subTest('Negative support throws ValueError'):
-            self.assertRaises(ValueError, lambda: Measure(0.0, -0.1))
-        with self.subTest('Support greater than 1 throws ValueError'):
-            self.assertRaises(ValueError, lambda: Measure(0.0, 1.1))
-        with self.subTest('NaN lift throws ValueError'):
-            self.assertRaises(ValueError, lambda: Measure(nan, 0.0))
-        with self.subTest('NaN support throws ValueError'):
-            self.assertRaises(ValueError, lambda: Measure(0.0, nan))
-
-    def test_Product(self):
-        with self.subTest('Non-integral identifier throws TypeValidationError'):
-            self.assertRaises(TypeValidationError, lambda: Product(0.0, 'Proddy Product'))
-        with self.subTest('Negative identifier throws ValueError'):
-            self.assertRaises(ValueError, lambda: Product(-1, 'Proddy Product'))
-        with self.subTest('None for name throws TypeValidationError'):
-            self.assertRaises(TypeValidationError, lambda: Product(1, None))
-        with self.subTest('Empty string for name throws ValueError'):
-            self.assertRaises(ValueError, lambda: Product(1, ''))
-
-    def test_Rule(self):
-        with self.subTest('Unsorted antecedent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10, 0, -1))),
-                                                       (self.products[11],),
-                                                       Measure(0.0, 0.0)))
-        with self.subTest('Duplicate antecedent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((self.products[0], self.products[1], self.products[1]),
-                                                       (self.products[12],),
-                                                       Measure(0.0, 0.0)))
-        with self.subTest('No consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10))),
-                                                       (),
-                                                       Measure(0.0, 0.0)))
-        with self.subTest('Unsorted consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((),
-                                                       tuple(map(self.products.__getitem__, range(10, 0, -1))),
-                                                       Measure(0.0, 0.0)))
-        with self.subTest('Duplicate consequent products throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule((self.products[11],),
-                                                       (self.products[0], self.products[1], self.products[1]),
-                                                       Measure(0.0, 0.0)))
-        with self.subTest('Any product which is both antecedent and consequent throws ValueError'):
-            self.assertRaises(ValueError, lambda: Rule(tuple(map(self.products.__getitem__, range(10))),
-                                                       (self.products[0],),
-                                                       Measure(0.0, 0.0)))
+        cls.suggestion_data = \
+            (np.array([ 9, 25, 3,  7, 8, 10], dtype=np.uint32),
+             np.array([35, 25, 2,  7, 6, 10], dtype=np.uint32),
+             np.array([28, 25, 2,  7, 6, 10], dtype=np.uint32),
+             np.array([10, 25, 2,  6, 7, 35], dtype=np.uint32),
+             np.array([10, 25, 2,  6, 7, 28], dtype=np.uint32),
+             np.array([ 9, 25, 8, 25, 8], dtype=np.uint32),
+             np.array([10, 25, 7, 25, 7], dtype=np.uint32),
+             np.array([35, 25, 6, 25, 6], dtype=np.uint32),
+             np.array([28, 25, 6, 25, 6], dtype=np.uint32),
+             np.array([34, 25, 5, 25, 5], dtype=np.uint32))
+        cls.suggestion_properties = \
+            ({'antecedent_count': 7, 'antecedent_items': (10,), 'consequent_count': 8, 'consequent_item': 9,
+              'item_set_count': 3, 'lift': 25 * 3 / (7 * 8), 'support': 3 / 25, 'transaction_count': 25},
+             {'antecedent_count': 7, 'antecedent_items': (10,), 'consequent_count': 6, 'consequent_item': 35,
+              'item_set_count': 2, 'lift': 25 * 2 / (7 * 6), 'support': 2 / 25, 'transaction_count': 25},
+             {'antecedent_count': 7, 'antecedent_items': (10,), 'consequent_count': 6, 'consequent_item': 28,
+              'item_set_count': 2, 'lift': 25 * 2 / (7 * 6), 'support': 2 / 25, 'transaction_count': 25},
+             {'antecedent_count': 6, 'antecedent_items': (35,), 'consequent_count': 7, 'consequent_item': 10,
+              'item_set_count': 2, 'lift': 25 * 2 / (6 * 7), 'support': 2 / 25, 'transaction_count': 25},
+             {'antecedent_count': 6, 'antecedent_items': (28,), 'consequent_count': 7, 'consequent_item': 10,
+              'item_set_count': 2, 'lift': 25 * 2 / (6 * 7), 'support': 2 / 25, 'transaction_count': 25},
+             {'antecedent_count': 25, 'antecedent_items': (), 'consequent_count': 8, 'consequent_item': 9,
+              'item_set_count': 8, 'lift': 1.0, 'support': 8 / 25, 'transaction_count': 25},
+             {'antecedent_count': 25, 'antecedent_items': (), 'consequent_count': 7, 'consequent_item': 10,
+              'item_set_count': 7, 'lift': 1.0, 'support': 7 / 25, 'transaction_count': 25},
+             {'antecedent_count': 25, 'antecedent_items': (), 'consequent_count': 6, 'consequent_item': 35,
+              'item_set_count': 6, 'lift': 1.0, 'support': 6 / 25, 'transaction_count': 25},
+             {'antecedent_count': 25, 'antecedent_items': (), 'consequent_count': 6, 'consequent_item': 28,
+              'item_set_count': 6, 'lift': 1.0, 'support': 6 / 25, 'transaction_count': 25},
+             {'antecedent_count': 25, 'antecedent_items': (), 'consequent_count': 5, 'consequent_item': 34,
+              'item_set_count': 5, 'lift': 1.0, 'support': 5 / 25, 'transaction_count': 25})
 
     def test_Suggestion(self):
-        with self.subTest('Sorted sequence of suggestions sort in descending order of lift, then support and product'):
-            self.assertSequenceEqual(thread(self.suggestions,
+        with self.subTest('Suggestions constructed from NumPy arrays have expected properties'):
+            for suggestion, properties in zip(map(Suggestion, self.suggestion_data), self.suggestion_properties):
+                with self.subTest(f'Suggestion constructed from {suggestion.data} has expected properties'):
+                    self.assertTrue(all(getattr(suggestion, property_name) == properties[property_name]
+                                        for property_name in properties))
+        with self.subTest('Sorted sequence of suggestions in descending order of lift, then support and product'):
+            self.assertSequenceEqual(thread(self.suggestion_data,
+                                            (map, Suggestion),
                                             sorted,
-                                            (map, lambda suggestion: suggestion.product.identifier),
+                                            (map, lambda suggestion: suggestion.data),
                                             tuple),
-                                     (6, 1, 4, 12, 11, 7, 3, 8, 1, 7, 8, 2, 10, 11, 1, 4, 3, 9, 12, 0, 6, 5))
+                                     thread(range(10),  # It was already sorted to begin with, so the indices match.
+                                            (map, self.suggestion_data.__getitem__),
+                                            tuple))
 
 
 if __name__ == '__main__':

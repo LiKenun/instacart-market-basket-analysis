@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, Response
 from werkzeug.exceptions import HTTPException
 from werkzeug.urls import url_parse
-from repositories import ProductRepository, RuleRepository
+from repositories import ProductRepository, SuggestionRepository
 from services import ProductLookupService
 
 
@@ -9,9 +9,8 @@ def create_app() -> Flask:  # TODO: Move views to a separate file
     app = Flask(__name__,
                 static_folder='../build',
                 static_url_path='/')
-    product_repoository = ProductRepository('products.txt.xz')
-    rule_repository = RuleRepository(product_repoository, 'association_rules.tsv.xz')
-    product_lookup_service = ProductLookupService(product_repoository, rule_repository)
+    product_lookup_service = ProductLookupService(ProductRepository('products.txt.xz'),
+                                                  SuggestionRepository('suggestions.npz.xz'))
 
     # See the Stack Overflow answer for why this is needed: https://stackoverflow.com/a/44572672/1405571.
     @app.after_request

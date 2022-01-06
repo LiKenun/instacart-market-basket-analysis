@@ -13,18 +13,18 @@ function App() {
 
   const addListItem = (newItem) => {
     setListItems([...listItems, newItem]);
-    removeSuggestion(newItem.product.identifier);
+    removeSuggestion(newItem.identifier);
     if (!searchQuery)
         triggerGetSuggestion();
   }
 
   const removeListItem = (identifier) => {
-    setListItems(listItems.filter(item => item.product.identifier !== identifier));
+    setListItems(listItems.filter(item => item.identifier !== identifier));
     triggerGetSuggestion();
   }
 
   const removeSuggestion = (identifier) => {
-    setSuggestions(suggestions.filter(item => item.product.identifier !== identifier));
+    setSuggestions(suggestions.filter(item => item.identifier !== identifier));
   }
 
   const triggerGetSuggestion = () => {
@@ -37,7 +37,7 @@ function App() {
 
   useEffect(() => {
     axios.post('/api/suggestion',
-               {basket: listItems.map(value => value.product.identifier),
+               {basket: listItems.map(value => value.identifier),
                 query: searchQuery})
          .then(response => {
             setSuggestions(response.data['data']);
@@ -56,16 +56,16 @@ function App() {
           <Typography.Paragraph style={{display: 'flex', flexDirection: 'column', flexGrow: 1}}>
             <List dataSource={listItems}
                   renderItem={item => (<List.Item actions={[<Button type="text"
-                                                                    onClick={(event) => removeListItem(item.product.identifier)}>
+                                                                    onClick={(event) => removeListItem(item.identifier)}>
                                                               <Typography.Text type="secondary">
                                                                 <CloseOutlined />
                                                               </Typography.Text>
                                                             </Button>]}>
                                          <Checkbox>
-                                           {item.product.name}
+                                           {item.name}
                                          </Checkbox>
                                        </List.Item>)}
-                  rowKey={item => item.product.identifier}
+                  rowKey={item => item.identifier}
                   style={{flexGrow: 1}} />
             <Divider />
             <List id="suggestionsContainer"
@@ -73,20 +73,19 @@ function App() {
                   renderItem={item => (<List.Item>
                                          <Typography.Link italic
                                                           type="secondary"
-                                                          title={item.product.name + ' ⟵ ' +
+                                                          title={item.name + ' ⟵ ' +
                                                                  (item.antecedent_items.length ?
-                                                                   item.antecedent_items.map(product => product.name).join(', ') :
-                                                                   'empty list') +
+                                                                   item.antecedent_items.join(', ') : 'empty list') +
                                                                  ' (' +
-                                                                 item.measure.lift.toLocaleString('en-US',
-                                                                                                  {minimumFractionDigits: 2,
-                                                                                                   maximumFractionDigits: 2}) +
+                                                                 item.lift.toLocaleString('en-US',
+                                                                                          {minimumFractionDigits: 2,
+                                                                                           maximumFractionDigits: 2}) +
                                                                  ' lift)'}
                                                           onClick={(event) => addListItem(item)}>
-                                           {item.product.name}
+                                           {item.name}
                                          </Typography.Link>
                                        </List.Item>)}
-                  rowKey={item => item.product.identifier} />
+                  rowKey={item => item.identifier} />
           </Typography.Paragraph>
         </div>
       </Layout.Content>

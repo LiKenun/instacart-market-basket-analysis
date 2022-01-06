@@ -1,39 +1,17 @@
 import csv
-from dataclasses import is_dataclass
 from functools import partial
 from io import TextIOBase, TextIOWrapper
-from itertools import groupby, starmap, zip_longest
-import lzma
-from operator import ne
+from itertools import groupby
 import re
-from toolz import apply, compose_left as compose, drop, identity, peek
-from typing import Any, Callable, IO, Iterable, Optional, Protocol, Sequence, Type, TypeVar
+from toolz import apply, compose_left as compose
+from typing import Any, Callable, IO, Iterable, Optional, Protocol, TypeVar
 
 T = TypeVar('T')
 U = TypeVar('U')
 
 
 class SupportsLessThan(Protocol):
-    def __lt__(self, __other: Any) -> bool: ...
-
-
-def create_csv_to_dataclass_mapper(data_class: Type[T], transform: dict[str, Callable[[str], Any]] = {}) \
-        -> Callable[[Iterable[Sequence[str]]], Iterable[T]]:
-    if not is_dataclass(data_class):
-        raise TypeError('Argument \'data_class\' is not a dataclass.')
-    init_args = tuple(data_class.__annotations__.keys())
-    transform = tuple(transform.get(arg, identity)
-                      for arg in init_args)
-
-    def function(iterable: Iterable[Sequence[str]]) -> Iterable[T]:
-        header_row, iterable = peek(iterable)
-        if any(starmap(ne, zip_longest(init_args, header_row))):  # Validate the order, names, and number of arguments.
-            print(f'{init_args!r} != {header_row!r}')
-            raise NotImplementedError()  # Other possibilities not yet supported
-        for row in drop(1, iterable):
-            yield data_class(*starmap(apply, zip(transform, row)))
-
-    return function
+    def __lt__(self, __other) -> bool: ...
 
 
 def create_grouper(key: Optional[Callable[[T], U]] = None) -> Callable[[T], Iterable[tuple[U, Iterable[T]]]]:
@@ -41,28 +19,12 @@ def create_grouper(key: Optional[Callable[[T], U]] = None) -> Callable[[T], Iter
 
 
 def create_sorter(key: Optional[Callable[[T], SupportsLessThan]] = None, reverse: bool = False) \
-        -> Callable[[Iterable], list[T]]:
+        -> Callable[[Iterable[T]], list[T]]:
     return partial(sorted, key=key, reverse=reverse)
 
 
-def first(sequence: Sequence[T]) -> T:
+def first(sequence: tuple[T, U]) -> T:
     return sequence[0]
-
-
-def is_sorted(comparison_operator: Callable[[T, T], bool], sequence: Sequence) -> bool:
-    return all(starmap(comparison_operator, zip(sequence, sequence[1:])))
-
-
-def read_compressed_csv(file: IO[bytes] | str, delimiter: str = '\t') -> Iterable[list[str]]:
-    with lzma.open(file, 'rt', format=lzma.FORMAT_XZ, encoding='utf-8') as stream:
-        for row in read_csv(stream, delimiter):
-            yield row
-
-
-def read_compressed_txt(file: IO[bytes] | str) -> Iterable[str]:
-    with lzma.open(file, 'rt', format=lzma.FORMAT_XZ, encoding='utf-8') as stream:
-        for line in stream:
-            yield line.rstrip()
 
 
 def read_csv(file: IO[bytes] | str | TextIOBase, delimiter: str = '\t') -> Iterable[list[str]]:
@@ -76,7 +38,7 @@ def read_csv(file: IO[bytes] | str | TextIOBase, delimiter: str = '\t') -> Itera
                 yield row
 
 
-def second(sequence: Sequence[T]) -> T:
+def second(sequence: tuple[T, U]) -> U:
     return sequence[1]
 
 

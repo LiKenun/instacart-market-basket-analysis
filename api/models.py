@@ -1,101 +1,89 @@
-from dataclass_type_validator import dataclass_validate
-from dataclasses import dataclass, field
-from math import isnan
-from operator import lt
-from helpers import is_sorted
+from dataclasses import dataclass
+import numpy as np
 
 
-def _check_is_all_product_and_sorted(items: tuple, field_name: str):
-    if not all(isinstance(item, Product) for item in items):
-        raise TypeError(f'Field \'{field_name}\' must be a tuple of Product objects.')
-    if not is_sorted(lt, items):
-        raise ValueError(f'Field \'{field_name}\' must be sorted in ascending order and contain no duplicates.')
-
-
-@dataclass_validate(strict=True, before_post_init=True)
-@dataclass(order=True, frozen=True, slots=True)
-class Measure:
-    lift: float = 0.0
-    support: float = 0.0
-
-    def __post_init__(self):
-        if self.lift < 0.0 or isnan(self.lift):
-            raise ValueError('Field \'lift\' must be a non-negative number.')
-        if self.support < 0.0 or 1.0 < self.support or isnan(self.support):
-            raise ValueError('Field \'support\' must be between 0 and 1 (inclusive).')
-
-
-@dataclass_validate(strict=True, before_post_init=True)
-@dataclass(order=True, frozen=True, slots=True)
-class Product:
-    identifier: int
-    name: str = field(hash=False, compare=False)
-
-    def __post_init__(self):
-        if self.identifier < 0:
-            raise ValueError('Field \'identifier\' must be a non-negative integer.')
-        if len(self.name) == 0:
-            raise ValueError('Field \'name\' must be a non-empty string.')
-
-
-@dataclass_validate(strict=True, before_post_init=True)
-@dataclass(order=True, frozen=True, slots=True)
-class Rule:
-    antecedent_items: tuple
-    consequent_items: tuple
-    measure: Measure = field(hash=False, compare=False)
-
-    def __post_init__(self):
-        _check_is_all_product_and_sorted(self.antecedent_items, 'antecedent_items')
-        if len(self.consequent_items) == 0:
-            raise ValueError('Field \'consequent_items\' must contain at least one item.')
-        _check_is_all_product_and_sorted(self.consequent_items, 'consequent_items')
-        if not set(self.antecedent_items).isdisjoint(self.consequent_items):
-            raise ValueError('An item may not be in both \'antecedent_items\' and \'consequent_items\'.')
-        if self.measure.support <= 0.0:
-            raise ValueError('Field \'support\' must be a positive value less than 1 (inclusive).')
-
-
-@dataclass_validate(strict=True, before_post_init=True)
-@dataclass(eq=False, unsafe_hash=True, frozen=True, slots=True)
+@dataclass(init=True, repr=False, eq=False, frozen=True, slots=True)
 class Suggestion:
-    product: Product
-    measure: Measure
-    antecedent_items: tuple = ()
-    rank: int = 0
+    data: np.ndarray
 
     def __post_init__(self):
-        _check_is_all_product_and_sorted(self.antecedent_items, 'antecedent_items')
+        if not (isinstance(self.data, np.ndarray) and self.data.dtype == np.uint32):
+            raise TypeError('Field \'data\' must be a NumPy array of uint32.')
+        if not (len(self.data.shape) == 1 and self.data.shape[0] >= 5):
+            raise ValueError('Field \'data\' must be a one-dimensional array of at least 5 elements.')
+        if np.any(np.diff(self.data[5:]) <= 0):
+            raise ValueError('Field \'data\' must contain only unique values sorted in ascending order from index 5.')
 
-    # The custom comparison implementations are needed to prioritize sorting in descending order.
+    def __hash__(self):
+        return hash(tuple(self.data))
+
+    def __repr__(self):
+        return f'Suggestion({self.data!r})'
+
+    def __str__(self):
+        return f'Suggestion(' \
+               f'consequent_item={self.consequent_item}, ' \
+               f'transaction_count={self.transaction_count}, ' \
+               f'item_set_count={self.item_set_count}, ' \
+               f'antecedent_count={self.antecedent_count}, ' \
+               f'consequent_count={self.consequent_count}, ' \
+               f'antecedent_items={self.antecedent_items}, ' \
+               f'lift={self.lift}, ' \
+               f'support={self.support})'
 
     def __eq__(self, other):
-        return self.rank == other.rank and \
-               self.measure == other.measure and \
-               self.product == other.product and \
-               self.antecedent_items == other.antecedent_items
+        return np.array_equal(self.data, other.data)
 
     def __ge__(self, other):
-        return (self.rank, self.measure, self.product, self.antecedent_items) <= \
-               (other.rank, other.measure, other.product, other.antecedent_items)
+        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) <= \
+               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
     def __gt__(self, other):
-        return (self.rank, self.measure, self.product, self.antecedent_items) < \
-               (other.rank, other.measure, other.product, other.antecedent_items)
+        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) < \
+               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
     def __le__(self, other):
-        return (self.rank, self.measure, self.product, self.antecedent_items) >= \
-               (other.rank, other.measure, other.product, other.antecedent_items)
+        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) >= \
+               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
     def __lt__(self, other):
-        return (self.rank, self.measure, self.product, self.antecedent_items) > \
-               (other.rank, other.measure, other.product, other.antecedent_items)
+        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) > \
+               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
     def __ne__(self, other):
-        return self.rank != other.rank or \
-               self.measure != other.measure or \
-               self.product != other.product or \
-               self.antecedent_items != other.antecedent_items
+        return not np.array_equal(self.data, other.data)
+
+    @property
+    def consequent_item(self):
+        return self.data[0]
+
+    @property
+    def transaction_count(self):
+        return self.data[1]
+
+    @property
+    def item_set_count(self):
+        return self.data[2]
+
+    @property
+    def antecedent_count(self):
+        return self.data[3]
+
+    @property
+    def consequent_count(self):
+        return self.data[4]
+
+    @property
+    def antecedent_items(self):
+        return tuple(self.data[5:])
+
+    @property
+    def lift(self):
+        return float(self.data[1]) * float(self.data[2]) / (float(self.data[3]) * float(self.data[4]))
+
+    @property
+    def support(self):
+        return float(self.data[2]) / float(self.data[1])
 
 
-__all__ = ('Measure', 'Product', 'Rule', 'Suggestion')
+__all__ = ('Suggestion',)

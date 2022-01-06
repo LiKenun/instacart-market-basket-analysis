@@ -1,53 +1,47 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
-from itertools import chain, starmap
+from itertools import chain, islice, starmap
+import numpy as np
 from settrie import SetTrieMap
 import sys
 from time import ctime, time
-from toolz import compose_left as compose, identity, juxt, mapcat, merge_sorted, take, thread_last as thread, unique, \
-                  valmap
+from toolz import compose_left as compose, identity, juxt, merge_sorted, thread_last as thread, unique
 from typing import Callable, Iterable, Optional
-from models import Product, Suggestion
-from repositories import ProductRepository, RuleRepository
+from models import Suggestion
+from repositories import ProductRepository, SuggestionRepository
 from helpers import create_grouper, create_sorter, first, second, star, tokenize, zipapply
 
 
 class ProductLookupService:
-    def __init__(self, product_repository: ProductRepository, rules_repository: RuleRepository) -> None:
+    def __init__(self, product_repository: ProductRepository, suggestions_repository: SuggestionRepository) -> None:
         get_time_as_string = compose(time, ctime)
 
         print(f'[{get_time_as_string()}] Initializing ProductLookupService…',
               file=sys.stderr)
 
         # Association rules
-        print(f'[{get_time_as_string()}]  Loading association rules from {rules_repository.rules_data_file}…',
+        print(f'[{get_time_as_string()}]  Loading suggestions from {suggestions_repository.suggestions_data_file}…',
               file=sys.stderr)
-        rules = rules_repository.get_all_rules()
-        print(f'[{get_time_as_string()}]   Loaded {len(rules):,} association rules.',
+        suggestions = suggestions_repository.get_all_suggestions()
+        print(f'[{get_time_as_string()}]   Loaded {len(suggestions):,} suggestions.',
               file=sys.stderr)
 
         # Index of sets of suggestions by antecedent items (maps sets of Products to sorted sets of Suggestions)
         print(f'[{get_time_as_string()}]  Creating association rule-based suggestions indexed by antecedent item sets…',
               file=sys.stderr)
         suggestions_by_antecedent_items = \
-            thread(rules,
-                   create_grouper(lambda rule: rule.antecedent_items),
-                   (map, partial(zipapply, (identity,
-                                            compose(partial(mapcat, lambda rule: ((item, rule.measure, rule.antecedent_items)
-                                                                                  for item in rule.consequent_items)),
-                                                    partial(starmap, Suggestion),
-                                                    sorted,
-                                                    tuple)))),
+            thread(suggestions,
+                   create_grouper(lambda suggestion: suggestion.antecedent_items),
+                   (map, partial(zipapply, (identity, compose(sorted, tuple)))),
                    SetTrieMap)
-        del rules
         print(f'[{get_time_as_string()}]   Created association rule-based suggestions indexed by antecedent item sets.',
               file=sys.stderr)
 
         # Dictionary of Product to lemma-word pairs and tuple of Products indexed by product identifier
         print(f'[{get_time_as_string()}]  Loading products from {product_repository.products_data_file}…',
               file=sys.stderr)
-        product_lemmas_dict = product_repository.get_all_products()
-        products = tuple(product_lemmas_dict)
+        products, product_name_lemmas = product_repository.get_all_products()
+        product_name_lemmas = dict(zip(products, product_name_lemmas))
         print(f'[{get_time_as_string()}]   Loaded {len(products):,} products.',
               file=sys.stderr)
 
@@ -59,13 +53,15 @@ class ProductLookupService:
               file=sys.stderr)
         suggestions_by_word = \
             thread(default_suggestions,
-                   (map, juxt(compose(lambda suggestion: product_lemmas_dict[suggestion.product],
+                   (map, juxt(compose(lambda suggestion: suggestion.consequent_item,
+                                      products.__getitem__,
+                                      product_name_lemmas.__getitem__,
                                       partial(map, first),
                                       unique,
                                       tuple),
                               identity)),
-                   create_sorter(first),  # Sort by Product word set.
-                   create_grouper(first),  # Group by Product word set; it’s possible that several Products share a set.
+                   create_sorter(first),  # Sort by word set.
+                   create_grouper(first),  # Group by word set; it’s possible that several products share a set.
                    (starmap, lambda words, pairs: (words, tuple(sorted(map(second, pairs))))),
                    SetTrieMap)
 
@@ -74,13 +70,10 @@ class ProductLookupService:
 
         print(f'[{get_time_as_string()}]  Initializing autocompleter for product names…',
               file=sys.stderr)
-        # Single empty dictionary instance to avoid allocating dictionaries for the Autocomplete initializer
-        empty_dictionary = {}
-
         # Autocompletion engine for text queries using words from product names
         autocompleter = \
-            thread(product_lemmas_dict.values(),
-                   chain.from_iterable,  # Flattens the iterable of iterables into an iterable of tuples (lemma & word)
+            thread(product_name_lemmas.values(),
+                   chain.from_iterable,
                    unique,
                    create_sorter(lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma before grouping
                    create_grouper(first),  # Groups words by their shared lemmas
@@ -90,7 +83,7 @@ class ProductLookupService:
                                                     unique,
                                                     tuple)))),
                    dict,  # Mapping of lemmas to a set of their other forms
-                   juxt(partial(valmap, lambda synonyms: empty_dictionary),  # Words with empty context dictionaries
+                   juxt(lambda dictionary: dict.fromkeys(dictionary.keys(), {}),  # Words with empty context dictionaries
                         identity),  # Unchanged dictionary to be passed on to AutoComplete as the synonyms argument
                    partial(star, AutoComplete))  # Calls the AutoComplete constructor with the two dictionaries
         print(f'[{get_time_as_string()}]   Initialized autocompleter for product names.',
@@ -106,7 +99,7 @@ class ProductLookupService:
 
         self.__autocomplete: Callable[[str], list[str]] = autocompleter.search
         self.__default_suggestions: tuple[Suggestion, ...] = default_suggestions
-        self.__get_product_by_identifier = products.__getitem__
+        self.__get_name_by_identifier = products.__getitem__
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
         self.__get_suggestions_by_words = get_suggestions_by_words
         self.__has_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.hassubset)
@@ -114,7 +107,7 @@ class ProductLookupService:
         print(f'[{get_time_as_string()}]  Initialized ProductLookupService.',
               file=sys.stderr)
 
-    def __get_basket_suggestions(self, basket: frozenset[Product]) -> Optional[Iterable[Suggestion]]:
+    def __get_basket_suggestions(self, basket: frozenset[np.int32]) -> Optional[Iterable[Suggestion]]:
         if not self.__has_suggestions_by_antecedent_items(basket):
             return None
         return merge_sorted(*self.__get_suggestions_by_antecedent_items(basket))
@@ -134,11 +127,11 @@ class ProductLookupService:
             results.intersection_update(suggestions)
         return results
 
-    def get_suggestions(self, basket: Iterable[int] = frozenset(), query: str = '') -> list[Suggestion]:
+    def get_suggestions(self, basket: Iterable[int] = frozenset(), query: str = '') -> list[dict]:
         # Determine what to get suggestions for; execute only the code necessary to fulfill the request.
         query_suggestions = self.__get_products_from_query(query.strip())
         if basket:
-            basket_products = frozenset(map(self.__get_product_by_identifier, basket))
+            basket_products = frozenset(map(np.int32, basket))
             basket_suggestions = self.__get_basket_suggestions(basket_products)
         else:
             basket_suggestions = basket_products = None
@@ -152,16 +145,22 @@ class ProductLookupService:
             case False, True:  # Possible query results, but basket suggestions came up empty
                 suggestions = sorted(query_suggestions)
             case _:  # Possible query results, and also basket suggestions
-                query_products = frozenset(map(lambda suggestion: suggestion.product, query_suggestions))
-                suggestions = filter(lambda suggestion: suggestion.product in query_products,
+                query_products = frozenset(map(lambda suggestion: suggestion.consequent_item, query_suggestions))
+                suggestions = filter(lambda suggestion: suggestion.consequent_item in query_products,
                                      chain(basket_suggestions, self.__default_suggestions))
 
         # Filter for 10 unique products.
-        unique_suggestions = unique(suggestions, lambda suggestion: suggestion.product)
+        unique_suggestions = unique(suggestions, lambda suggestion: suggestion.consequent_item)
         if basket_products:
-            unique_suggestions = filter(lambda suggestion: suggestion.product not in basket_products,
+            unique_suggestions = filter(lambda suggestion: suggestion.consequent_item not in basket_products,
                                         unique_suggestions)
-        return list(take(10, unique_suggestions))
+        return list({'identifier': int(suggestion.consequent_item),
+                     'name': self.__get_name_by_identifier(suggestion.consequent_item),
+                     'lift': suggestion.lift,
+                     'support': suggestion.support,
+                     'antecedent_items': [self.__get_name_by_identifier(item)
+                                          for item in suggestion.antecedent_items]}
+                    for suggestion in islice(unique_suggestions, 10))
 
 
 __all__ = ('ProductLookupService',)

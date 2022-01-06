@@ -15,12 +15,14 @@ from nltk.corpus import stopwords, wordnet as wn
 from nltk.data import find
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.tag import pos_tag
+import numpy as np
 import os.path as path
 from os.path import abspath
-from toolz import apply, compose_left as compose, first, identity, juxt, second, thread_last as thread, unique
+from toolz import apply, compose_left as compose, identity, juxt, mapcat, thread_last as thread, unique
 from typing import Any, Callable, IO, Iterable, Optional
 from zipfile import ZipFile
-from helpers import create_sorter, read_csv, tokenize
+from models import Suggestion
+from helpers import create_sorter, first, read_csv, second, tokenize
 
 
 def _ensure_nltk_data(names: Iterable[str]) -> None:
@@ -129,7 +131,7 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
                read_csv_in_zip,
                create_transform({'product_id': int, 'product_name': _unescape}),
                (filter, lambda product: product.product_id not in exclusions),
-               partial(sorted, key=second))
+               create_sorter(second))
     print(f'  Loaded {len(products):,} products; excluded {len(exclusions):,} products.')
     orders = filter(lambda item: item.product_id not in exclusions,
                     chain.from_iterable(map(compose(read_csv_in_zip,
@@ -141,11 +143,14 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
     for order in orders:
         transactions[order.order_id].add(map_product_identifier(order.product_id))
     print(f'  Generated a list of {len(transactions):,} transactions.')
-    return tuple(map(second, products)), tuple(map(tuple, transactions.values()))
+    return (tuple(map(second, products)),
+            tuple(tuple(transaction)
+                  for transaction
+                  in transactions.values()))
 
 
-def _train(transactions: tuple[tuple[int]], min_support: Optional[float] = None,
-           min_confidence: Optional[float] = None) -> tuple[Rule]:
+def _train(transactions: tuple[tuple[int, ...]], min_support: Optional[float] = None,
+           min_confidence: Optional[float] = None) -> tuple[Rule, ...]:
     product_counts = Counter(chain.from_iterable(transactions))
     transaction_count = len(transactions)
     null_base_rules = (Rule((), (product,), count, transaction_count, count, transaction_count)
@@ -162,20 +167,36 @@ def _train(transactions: tuple[tuple[int]], min_support: Optional[float] = None,
     return tuple(chain(null_base_rules, filter(lambda rule: rule.lift > 1, rules)))
 
 
-def _dump(directory: str, products: tuple[tuple[str, list[tuple[str, Optional[str]]]]], rules: tuple[Rule]) -> None:
+def _convert_rules_to_suggestions(rules: tuple[Rule, ...]) -> list[np.array]:
+    return thread(rules,
+                  (mapcat, lambda rule: ((item, rule.num_transactions, rule.count_full, rule.count_lhs, rule.count_rhs,
+                                          *sorted(rule.lhs))
+                                         for item in rule.rhs)),
+                  partial(map, compose(partial(np.array, dtype=np.uint32), Suggestion)),
+                  sorted,
+                  (map, lambda suggestion: suggestion.data),
+                  list)
+
+
+def _dump(directory: str, products: tuple[tuple[str, list[tuple[str, Optional[str]]]], ...], suggestions: list[np.array]) \
+        -> None:
     products_path = path.join(directory, 'products.txt.xz')
-    rules_path = path.join(directory, 'association_rules.tsv.xz')
+    suggestions_path = path.join(directory, 'suggestions.npz.xz')
+
     print(f' Writing {len(products):,} products to {products_path}…')
     _write_compressed_csv(products_path,
                           None,
                           thread(products,
                                  (starmap, lambda product_name, lemma_word_pairs: (product_name,
                                                                                    repr(lemma_word_pairs)))))
-    print(f' Writing {len(rules):,} rules to {rules_path}…')
-    _write_compressed_csv(rules_path,
-                          ('antecedent_items', 'consequent_items', 'measure'),
-                          (map(repr, (sorted(rule.lhs), sorted(rule.rhs), (rule.lift, rule.support)))
-                           for rule in sorted(rules, key=lambda rule: (rule.lhs, rule.rhs))))
+
+    print(f' Writing {len(suggestions):,} rules to {suggestions_path}…')
+    # See https://tonysyu.github.io/ragged-arrays.html for the method to save/load ragged arrays with NumPy.
+    lengths = [np.shape(array)[0] for array in suggestions]
+    indices = np.cumsum(lengths[:-1])
+    array = np.concatenate(suggestions)
+    with LZMAFile(suggestions_path, 'wb', check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream:
+        np.savez(stream, array=array, indices=indices)
 
 
 def _is_namedtuple_instance(value: Any) -> bool:
@@ -227,12 +248,6 @@ def _write_compressed_csv(file: IO[bytes] | str, column_names: Optional[Iterable
         _write_csv(stream, column_names, data, delimiter)
 
 
-def _write_compressed_txt(file: IO[bytes] | str, data: Iterable[str]) -> None:
-    with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream, \
-         TextIOWrapper(stream, encoding='utf-8', newline='\n') as text_stream:
-        text_stream.writelines(map(lambda line: line + '\n', data))
-
-
 def _write_csv(file: IO[bytes] | str | TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
         -> None:
     if isinstance(file, TextIOBase):
@@ -264,8 +279,11 @@ def run() -> None:
     print('Training…')
     rules = _train(transactions, minsupport, minconf)
     del transactions
+    print('Generating suggestions…')
+    suggestions = _convert_rules_to_suggestions(rules)
+    del rules
     print(f'Saving products and rules to {output_path}…')
-    _dump(output_path, products_with_lemmas, rules)
+    _dump(output_path, products_with_lemmas, suggestions)
 
 
 if __name__ == '__main__':

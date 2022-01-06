@@ -1,10 +1,11 @@
 from ast import literal_eval
 from dataclasses import dataclass
-from functools import cache, partial
-from toolz import compose_left as compose, thread_last as thread
+from functools import cache
+import lzma
+import numpy as np
 from typing import Optional
-from helpers import create_csv_to_dataclass_mapper, read_compressed_csv, zipapply
-from models import Measure, Product, Rule
+from helpers import read_csv
+from models import Suggestion
 
 
 @dataclass(eq=False, frozen=True, slots=True)
@@ -12,30 +13,22 @@ class ProductRepository:
     products_data_file: str
 
     @cache
-    def get_all_products(self) -> dict[Product, list[tuple[str, Optional[str]]]]:  # TODO: This needs to be immutable!
-        return {Product(index, product_name): literal_eval(word_lemma_pairs)
-                for index, (product_name, word_lemma_pairs)
-                in enumerate(read_compressed_csv(self.products_data_file))}
+    def get_all_products(self) -> tuple[tuple[str], tuple[tuple[tuple[str, Optional[str]]]]]:
+        with lzma.open(self.products_data_file, 'rt', format=lzma.FORMAT_XZ, encoding='utf-8') as stream:
+            return tuple(zip(*((product_name, tuple(literal_eval(word_lemma_pairs)))
+                               for product_name, word_lemma_pairs
+                               in read_csv(stream))))
 
 
 @dataclass(eq=False, frozen=True, slots=True)
-class RuleRepository:
-    product_repository: ProductRepository  # Needed to replace product identifiers by their corresponding Product object
-    rules_data_file: str
+class SuggestionRepository:
+    suggestions_data_file: str
 
-    @cache
-    def get_all_rules(self) -> tuple[Rule, ...]:
-        eval_tuple = compose(literal_eval,
-                             partial(map, tuple(self.product_repository.get_all_products()).__getitem__),
-                             tuple)
-        return thread(self.rules_data_file,
-                      read_compressed_csv,
-                      create_csv_to_dataclass_mapper(Rule,
-                                                     {'antecedent_items': eval_tuple,
-                                                      'consequent_items': eval_tuple,
-                                                      'measure': lambda text: Measure(*literal_eval(text))}),
-                      sorted,
-                      tuple)
+    # See https://tonysyu.github.io/ragged-arrays.html for the method to save/load ragged arrays with NumPy.
+    def get_all_suggestions(self) -> tuple:
+        with lzma.open(self.suggestions_data_file) as file:
+            data = np.load(file, allow_pickle=False)
+            return tuple(map(Suggestion, np.split(data['array'], data['indices'])))
 
 
-__all__ = ('ProductRepository', 'RuleRepository')
+__all__ = ('ProductRepository', 'SuggestionRepository')
