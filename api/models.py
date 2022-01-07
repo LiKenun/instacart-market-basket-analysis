@@ -11,6 +11,12 @@ class Suggestion:
             raise TypeError('Field \'data\' must be a NumPy array of uint32.')
         if not (len(self.data.shape) == 1 and self.data.shape[0] >= 5):
             raise ValueError('Field \'data\' must be a one-dimensional array of at least 5 elements.')
+        if not self.transaction_count > 0:
+            raise ValueError('Field \'data\' at index 1 must me a non-zero value.')
+        if not self.antecedent_count > 0:
+            raise ValueError('Field \'data\' at index 3 must me a non-zero value.')
+        if not self.consequent_count > 0:
+            raise ValueError('Field \'data\' at index 4 must me a non-zero value.')
         if np.any(np.diff(self.data[5:]) <= 0):
             raise ValueError('Field \'data\' must contain only unique values sorted in ascending order from index 5.')
 
