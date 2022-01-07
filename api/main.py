@@ -43,3 +43,6 @@ def create_app() -> Flask:  # TODO: Move views to a separate file
         return jsonify({'data': product_lookup_service.get_suggestions(**request.json)})
 
     return app
+
+
+flask_app = create_app()
