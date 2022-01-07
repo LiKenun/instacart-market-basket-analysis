@@ -180,7 +180,7 @@ def _convert_rules_to_suggestions(rules: tuple[Rule, ...]) -> list[np.array]:
 
 def _dump(directory: str, products: tuple[tuple[str, list[tuple[str, Optional[str]]]], ...], suggestions: list[np.array]) \
         -> None:
-    products_path = path.join(directory, 'products.txt.xz')
+    products_path = path.join(directory, 'products.tsv.xz')
     suggestions_path = path.join(directory, 'suggestions.npz.xz')
 
     print(f' Writing {len(products):,} products to {products_path}…')

@@ -9,7 +9,7 @@ def create_app() -> Flask:  # TODO: Move views to a separate file
     app = Flask(__name__,
                 static_folder='../build',
                 static_url_path='/')
-    product_lookup_service = ProductLookupService(ProductRepository('products.txt.xz'),
+    product_lookup_service = ProductLookupService(ProductRepository('products.tsv.xz'),
                                                   SuggestionRepository('suggestions.npz.xz'))
 
     # See the Stack Overflow answer for why this is needed: https://stackoverflow.com/a/44572672/1405571.
