@@ -71,8 +71,8 @@ _lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
             _map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
             _lemmatize_tagged_words,
             create_sorter(lambda lemma_word_pair: lemma_word_pair
-                                                  if lemma_word_pair[1]
-                                                  else (lemma_word_pair[0],)),
+                                                  if second(lemma_word_pair)
+                                                  else (first(lemma_word_pair),)),
             unique)
 
 
