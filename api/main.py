@@ -18,7 +18,7 @@ def create_app() -> Flask:  # TODO: Move views to a separate file
         referrer = url_parse(request.referrer[:-1]) \
                    if request.referrer \
                    else None
-        if referrer.host == request.host:
+        if referrer.host and referrer.host == request.host:
             response.headers.add('Access-Control-Allow-Origin', request.host_url)
             response.headers.add('Access-Control-Allow-Credentials', 'true')
             response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
