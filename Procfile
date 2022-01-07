@@ -1,1 +1,1 @@
-web: gunicorn --preload --chdir api main:create_app()
+web: gunicorn --preload --chdir api main:flask_app
