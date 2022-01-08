@@ -97,7 +97,7 @@ class ProductLookupService:
                     result.update(suggestions)
             return result
 
-        self.__autocomplete: Callable[[str], list[str]] = autocompleter.search
+        self.__autocomplete: Callable[[str], list[str]] = partial(autocompleter.search, max_cost=1, size=3)
         self.__default_suggestions: tuple[Suggestion, ...] = default_suggestions
         self.__get_name_by_identifier = products.__getitem__
         self.__get_suggestions_by_antecedent_items = partial(suggestions_by_antecedent_items.itersubsets, mode='values')
