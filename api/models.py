@@ -20,13 +20,13 @@ class Suggestion:
         if np.any(np.diff(self.data[5:]) <= 0):
             raise ValueError('Field \'data\' must contain only unique values sorted in ascending order from index 5.')
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(tuple(self.data))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'Suggestion({self.data!r})'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'Suggestion(' \
                f'consequent_item={self.consequent_item}, ' \
                f'transaction_count={self.transaction_count}, ' \
@@ -37,22 +37,22 @@ class Suggestion:
                f'lift={self.lift}, ' \
                f'support={self.support})'
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return np.array_equal(self.data, other.data)
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> bool:
         return (self.lift, self.support, self.data[0], tuple(self.data[5:])) <= \
                (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> bool:
         return (self.lift, self.support, self.data[0], tuple(self.data[5:])) < \
                (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
-    def __le__(self, other):
+    def __le__(self, other) -> bool:
         return (self.lift, self.support, self.data[0], tuple(self.data[5:])) >= \
                (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         return (self.lift, self.support, self.data[0], tuple(self.data[5:])) > \
                (other.lift, other.support, other.data[0], tuple(other.data[5:]))
 
@@ -60,35 +60,35 @@ class Suggestion:
         return not np.array_equal(self.data, other.data)
 
     @property
-    def consequent_item(self):
+    def consequent_item(self) -> np.int32:
         return self.data[0]
 
     @property
-    def transaction_count(self):
+    def transaction_count(self) -> np.int32:
         return self.data[1]
 
     @property
-    def item_set_count(self):
+    def item_set_count(self) -> np.int32:
         return self.data[2]
 
     @property
-    def antecedent_count(self):
+    def antecedent_count(self) -> np.int32:
         return self.data[3]
 
     @property
-    def consequent_count(self):
+    def consequent_count(self) -> np.int32:
         return self.data[4]
 
     @property
-    def antecedent_items(self):
+    def antecedent_items(self) -> tuple[np.int32]:
         return tuple(self.data[5:])
 
     @property
-    def lift(self):
+    def lift(self) -> float:
         return float(self.data[1]) * float(self.data[2]) / (float(self.data[3]) * float(self.data[4]))
 
     @property
-    def support(self):
+    def support(self) -> float:
         return float(self.data[2]) / float(self.data[1])
 
 
