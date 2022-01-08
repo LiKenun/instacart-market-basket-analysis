@@ -31,6 +31,7 @@ class ProductLookupService:
               file=sys.stderr)
         suggestions_by_antecedent_items = \
             thread(suggestions,
+                   create_sorter(lambda suggestion: suggestion.antecedent_items),
                    create_grouper(lambda suggestion: suggestion.antecedent_items),
                    (map, partial(zipapply, (identity, compose(sorted, tuple)))),
                    SetTrieMap)
