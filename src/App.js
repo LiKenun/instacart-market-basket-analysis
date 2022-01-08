@@ -36,14 +36,19 @@ function App() {
   }
 
   useEffect(() => {
-    axios.post('/api/suggestion',
-               {basket: listItems.map(value => value.identifier),
-                query: searchQuery})
-         .then(response => {
-            setSuggestions(response.data['data']);
-            document.getElementById('suggestionsContainer').scrollIntoView(false);
-         })
-         .catch(error => setSuggestions([]));
+    const timer = setTimeout(() => {
+      axios.post('/api/suggestion',
+      {
+        basket: listItems.map(value => value.identifier),
+        query: searchQuery
+      })
+      .then(response => {
+        setSuggestions(response.data['data']);
+        document.getElementById('suggestionsContainer').scrollIntoView(false);
+      })
+      .catch(error => setSuggestions([]));
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [searchQuery, suggestionTrigger]);
 
   return (
