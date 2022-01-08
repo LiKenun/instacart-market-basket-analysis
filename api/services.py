@@ -141,7 +141,7 @@ class ProductLookupService:
             case True, True:  # No query, and basket suggestions came up empty
                 suggestions = self.__default_suggestions
             case True, False:  # No query, but there were some basket suggestions
-                suggestions = chain(basket_suggestions, self.__default_suggestions)
+                suggestions = basket_suggestions
             case False, True:  # Possible query results, but basket suggestions came up empty
                 suggestions = sorted(query_suggestions)
             case _:  # Possible query results, and also basket suggestions
