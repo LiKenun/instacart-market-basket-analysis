@@ -1,10 +1,9 @@
 import csv
 from functools import partial
 from io import TextIOBase, TextIOWrapper
-from itertools import groupby
 import re
 from toolz import apply, compose_left as compose
-from typing import Any, Callable, IO, Iterable, Optional, Protocol, TypeVar
+from typing import Any, Callable, IO, Iterable, Protocol, TypeVar
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -12,15 +11,6 @@ U = TypeVar('U')
 
 class SupportsLessThan(Protocol):
     def __lt__(self, __other) -> bool: ...
-
-
-def create_grouper(key: Optional[Callable[[T], U]] = None) -> Callable[[T], Iterable[tuple[U, Iterable[T]]]]:
-    return partial(groupby, key=key)
-
-
-def create_sorter(key: Optional[Callable[[T], SupportsLessThan]] = None, reverse: bool = False) \
-        -> Callable[[Iterable[T]], list[T]]:
-    return partial(sorted, key=key, reverse=reverse)
 
 
 def first(sequence: tuple[T, U]) -> T:

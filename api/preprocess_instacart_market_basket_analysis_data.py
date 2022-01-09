@@ -8,8 +8,6 @@ from functools import partial
 import html
 from io import TextIOBase, TextIOWrapper
 from itertools import chain, filterfalse, starmap
-import lzma
-from lzma import LZMAFile
 from nltk import download
 from nltk.corpus import stopwords, wordnet as wn
 from nltk.data import find
@@ -22,7 +20,7 @@ from toolz import apply, compose_left as compose, identity, juxt, mapcat, thread
 from typing import Any, Callable, IO, Iterable, Optional
 from zipfile import ZipFile
 from models import Suggestion
-from helpers import create_sorter, first, read_csv, second, tokenize
+from helpers import first, read_csv, second, tokenize
 
 
 def _ensure_nltk_data(names: Iterable[str]) -> None:
@@ -70,9 +68,9 @@ _lemmatize: Callable[[str], Iterable[tuple[str, Optional[str]]]] = \
             pos_tag,  # Tag each token (or “word”) with a part of speech (POS).
             _map_to_wordnet_pos,  # Map NLTK’s POS tags to WordNet’s tags.
             _lemmatize_tagged_words,
-            create_sorter(lambda lemma_word_pair: lemma_word_pair
-                                                  if second(lemma_word_pair)
-                                                  else (first(lemma_word_pair),)),
+            partial(sorted, key=lambda lemma_word_pair: lemma_word_pair
+                                                        if second(lemma_word_pair)
+                                                        else (first(lemma_word_pair),)),
             unique)
 
 
@@ -131,7 +129,7 @@ def _preprocess(archive: ZipFile, exclusions: frozenset[int]) -> tuple[tuple[str
                read_csv_in_zip,
                create_transform({'product_id': int, 'product_name': _unescape}),
                (filter, lambda product: product.product_id not in exclusions),
-               create_sorter(second))
+               partial(sorted, key=second))
     print(f'  Loaded {len(products):,} products; excluded {len(exclusions):,} products.')
     orders = filter(lambda item: item.product_id not in exclusions,
                     chain.from_iterable(map(compose(read_csv_in_zip,
@@ -180,23 +178,22 @@ def _convert_rules_to_suggestions(rules: tuple[Rule, ...]) -> list[np.array]:
 
 def _dump(directory: str, products: tuple[tuple[str, list[tuple[str, Optional[str]]]], ...], suggestions: list[np.array]) \
         -> None:
-    products_path = path.join(directory, 'products.tsv.xz')
-    suggestions_path = path.join(directory, 'suggestions.npz.xz')
+    products_path = path.join(directory, 'products.tsv')
+    suggestions_path = path.join(directory, 'suggestions.npz')
 
     print(f' Writing {len(products):,} products to {products_path}…')
-    _write_compressed_csv(products_path,
-                          None,
-                          thread(products,
-                                 (starmap, lambda product_name, lemma_word_pairs: (product_name,
-                                                                                   repr(lemma_word_pairs)))))
+    _write_csv(products_path,
+               None,
+               thread(products,
+                      (starmap, lambda product_name, lemma_word_pairs: (product_name, repr(lemma_word_pairs)))))
 
     print(f' Writing {len(suggestions):,} rules to {suggestions_path}…')
     # See https://tonysyu.github.io/ragged-arrays.html for the method to save/load ragged arrays with NumPy.
     lengths = [np.shape(array)[0] for array in suggestions]
     indices = np.cumsum(lengths[:-1])
     array = np.concatenate(suggestions)
-    with LZMAFile(suggestions_path, 'wb', check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream:
-        np.savez(stream, array=array, indices=indices)
+    with open(suggestions_path, 'wb') as file:
+        np.savez(file, array=array, indices=indices)
 
 
 def _is_namedtuple_instance(value: Any) -> bool:
@@ -240,12 +237,6 @@ def _write_csv_to_text_stream(file: TextIOBase, column_names: Optional[Iterable]
         rows = data
     writer.writerow(column_names)
     writer.writerows(rows)
-
-
-def _write_compressed_csv(file: IO[bytes] | str, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \
-        -> None:
-    with LZMAFile(file, 'wb', format=lzma.FORMAT_XZ, check=lzma.CHECK_SHA256, preset=lzma.PRESET_EXTREME) as stream:
-        _write_csv(stream, column_names, data, delimiter)
 
 
 def _write_csv(file: IO[bytes] | str | TextIOBase, column_names: Optional[Iterable], data: Any, delimiter: str = '\t') \

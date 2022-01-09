@@ -33,10 +33,10 @@ class TestServices(unittest.TestCase):
                                             tuple),
                                      ('Cheddar Cheese', 'Mozzarella Cheese'))
         with self.subTest('Misspellings are forgiven'):
-            self.assertEqual(thread(product_lookup_service.get_suggestions(query='bier'),
+            self.assertEqual(thread(product_lookup_service.get_suggestions(query='cheesy'),
                                     (map, lambda item: item['name']),
-                                    first),
-                             'Beer')
+                                    tuple),
+                             ('Mozzarella Cheese', 'Cheddar Cheese'))
         with self.subTest('Query for text that does not exist in any product names results in zero suggestions'):
             self.assertSequenceEqual(product_lookup_service.get_suggestions(query='burrito'),
                                      ())  # Sorry, friend. No burritos here!

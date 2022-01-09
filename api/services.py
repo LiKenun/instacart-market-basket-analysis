@@ -1,6 +1,6 @@
 from fast_autocomplete import AutoComplete
 from functools import partial
-from itertools import chain, islice, starmap
+from itertools import chain, groupby, islice, starmap
 import numpy as np
 from settrie import SetTrieMap
 import sys
@@ -9,7 +9,7 @@ from toolz import compose_left as compose, identity, juxt, merge_sorted, thread_
 from typing import Callable, Iterable, Optional
 from models import Suggestion
 from repositories import ProductRepository, SuggestionRepository
-from helpers import create_grouper, create_sorter, first, second, star, tokenize, zipapply
+from helpers import first, second, star, tokenize, zipapply
 
 
 class ProductLookupService:
@@ -31,8 +31,8 @@ class ProductLookupService:
               file=sys.stderr)
         suggestions_by_antecedent_items = \
             thread(suggestions,
-                   create_sorter(lambda suggestion: suggestion.antecedent_items),
-                   create_grouper(lambda suggestion: suggestion.antecedent_items),
+                   partial(sorted, key=lambda suggestion: suggestion.antecedent_items),
+                   partial(groupby, key=lambda suggestion: suggestion.antecedent_items),
                    (map, partial(zipapply, (identity, compose(sorted, tuple)))),
                    SetTrieMap)
         print(f'[{get_time_as_string()}]   Created association rule-based suggestions indexed by antecedent item sets.',
@@ -61,8 +61,8 @@ class ProductLookupService:
                                       unique,
                                       tuple),
                               identity)),
-                   create_sorter(first),  # Sort by word set.
-                   create_grouper(first),  # Group by word set; it’s possible that several products share a set.
+                   partial(sorted, key=first),  # Sort by word set.
+                   partial(groupby, key=first),  # Group by word set; it’s possible that several products share a set.
                    (starmap, lambda words, pairs: (words, tuple(sorted(map(second, pairs))))),
                    SetTrieMap)
 
@@ -76,8 +76,8 @@ class ProductLookupService:
             thread(product_name_lemmas.values(),
                    chain.from_iterable,
                    unique,
-                   create_sorter(lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma before grouping
-                   create_grouper(first),  # Groups words by their shared lemmas
+                   partial(sorted, key=lambda pair: pair if pair[1] else (pair[0],)),  # Must sort by lemma first
+                   partial(groupby, key=first),  # Then groups words by their shared lemmas
                    (map, partial(zipapply, (identity,  # Passes the lemma through unchanged
                                             compose(partial(map, second),  # The original words (the “synonyms”)
                                                     partial(filter, None),  # Filters out Nones

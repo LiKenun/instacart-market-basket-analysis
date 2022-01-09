@@ -3,7 +3,10 @@
 FROM python:3.10.1
 WORKDIR /app
 
-COPY requirements.txt api/.flaskenv api/suggestions.npz.xz api/helpers.py api/main.py api/models.py api/preprocess_instacart_market_basket_analysis_data.py api/products.tsv.xz api/repositories.py api/services.py ./
+COPY release-tasks.sh requirements.txt api/.flaskenv api/data.zpaq api/helpers.py api/main.py api/models.py api/repositories.py api/services.py ./
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt update && apt install -y zpaq && rm -rf /var/lib/apt/lists/*
+RUN bash release-tasks.sh
 RUN pip install -r ./requirements.txt
 RUN pip install gunicorn
 ENV FLASK_ENV production

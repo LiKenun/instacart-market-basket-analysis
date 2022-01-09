@@ -27,3 +27,5 @@ yarn-error.log*
 
 # large data files
 /api/instacart-market-basket-analysis.zip
+/api/products.tsv
+/api/suggestions.npz
