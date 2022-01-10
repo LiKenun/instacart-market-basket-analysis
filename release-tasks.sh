@@ -5,6 +5,7 @@ then
     exit 2
   fi
   zpaq x data.zpaq -force || exit 126
+  rm data.zpaq
 fi
 if [ ! -f products.tsv ] || [ ! -f suggestions.npz ]
 then

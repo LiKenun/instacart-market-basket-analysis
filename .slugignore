@@ -1,2 +1,6 @@
 /api/preprocess_instacart_market_basket_analysis_data.py
+/deployment
+/docker-compose.yml
+/Dockerfile.*
+/README.md
 /test
