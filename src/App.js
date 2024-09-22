@@ -47,7 +47,7 @@ function App() {
         document.getElementById('suggestionsContainer').scrollIntoView(false);
       })
       .catch(error => setSuggestions([]));
-    }, 1000);
+    }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery, suggestionTrigger]);
 

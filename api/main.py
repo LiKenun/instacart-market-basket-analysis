@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, Response
 from werkzeug.exceptions import HTTPException
-from werkzeug.urls import url_parse
+from urllib.parse import urlparse
 from repositories import ProductRepository, SuggestionRepository
 from services import ProductLookupService
 
@@ -15,7 +15,7 @@ def create_app() -> Flask:  # TODO: Move views to a separate file
     # See the Stack Overflow answer for why this is needed: https://stackoverflow.com/a/44572672/1405571.
     @app.after_request
     def add_cors_headers(response: Response) -> Response:
-        if request.referrer and url_parse(request.referrer[:-1]).host == request.host:
+        if request.referrer and urlparse(request.referrer[:-1]).hostname == request.host:
             response.headers.add('Access-Control-Allow-Origin', request.host_url)
             response.headers.add('Access-Control-Allow-Credentials', 'true')
             response.headers.add('Access-Control-Allow-Headers', 'Content-Type')

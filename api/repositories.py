@@ -31,7 +31,7 @@ class SuggestionRepository:
     def get_all_suggestions(self) -> tuple:
         with open(self.suggestions_data_file, 'rb') as file:
             data = np.load(file, allow_pickle=False)
-            return tuple(filter(lambda suggestion: len(suggestion.antecedent_items) < 3, map(Suggestion, np.split(data['array'], data['indices']))))
+            return tuple(filter(lambda suggestion: len(suggestion.antecedent_items) < 10, map(Suggestion, np.split(data['array'], data['indices']))))
 
 
 __all__ = ('ProductRepository', 'SuggestionRepository')

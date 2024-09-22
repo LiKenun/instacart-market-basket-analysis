@@ -1,12 +1,25 @@
-smart-open==5.2.1
-numpy==1.21.5
-sortedcontainers==2.4.0
--e git+https://github.com/GregoryMorse/pysettrie.git@patch-1#egg=pysettrie
-toolz
-efficient-apriori==2.0.1
-nltk==3.6.6
-python-Levenshtein==0.12.2
+blinker==1.8.2
+click==8.1.7
+efficient_apriori==2.0.5
 fast-autocomplete==0.9.0
-python-dotenv==0.19.2
-Flask==2.0.1
-gunicorn
+Flask==3.0.3
+gunicorn==23.0.0
+itsdangerous==2.2.0
+Jinja2==3.1.4
+joblib==1.4.2
+Levenshtein==0.26.0
+MarkupSafe==2.1.5
+nltk==3.9.1
+numpy==2.1.1
+packaging==24.1
+-e git+https://github.com/GregoryMorse/pysettrie.git@cde940accafae0ca18f43f0098a1515f2c5eb1ac#egg=pysettrie
+python-dotenv==1.0.1
+python-Levenshtein==0.26.0
+rapidfuzz==3.9.7
+regex==2024.9.11
+smart-open==7.0.4
+sortedcontainers==2.4.0
+toolz==0.12.1
+tqdm==4.66.5
+Werkzeug==3.0.4
+wrapt==1.16.0

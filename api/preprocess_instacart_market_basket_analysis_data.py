@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from ast import literal_eval
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
@@ -31,7 +33,7 @@ def _ensure_nltk_data(names: Iterable[str]) -> None:
             download(path.basename(name))
 
 
-_ensure_nltk_data(('corpora/omw-1.4', 'corpora/stopwords', 'corpora/wordnet', 'taggers/averaged_perceptron_tagger',
+_ensure_nltk_data(('corpora/omw-1.4', 'corpora/stopwords', 'corpora/wordnet', 'taggers/averaged_perceptron_tagger_eng',
                    'tokenizers/punkt'))
 _lemmatizer = WordNetLemmatizer()
 
@@ -154,7 +156,7 @@ def _train(transactions: tuple[tuple[int, ...]], min_support: Optional[float] = 
     null_base_rules = (Rule((), (product,), count, transaction_count, count, transaction_count)
                        for product, count in product_counts.items())
     item_sets, rules = apriori(transactions,
-                               min_support=(100 / transaction_count
+                               min_support=(min(100 / transaction_count, max(2 / transaction_count, 1 / 10))
                                             if min_support is None
                                             else min_support),
                                min_confidence=(1 / 10

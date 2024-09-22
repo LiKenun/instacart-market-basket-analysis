@@ -12,11 +12,11 @@ class Suggestion:
         if not (len(self.data.shape) == 1 and self.data.shape[0] >= 5):
             raise ValueError('Field \'data\' must be a one-dimensional array of at least 5 elements.')
         if not self.transaction_count > 0:
-            raise ValueError('Field \'data\' at index 1 must me a non-zero value.')
+            raise ValueError('Field \'data\' at index 1 must be a non-zero value.')
         if not self.antecedent_count > 0:
-            raise ValueError('Field \'data\' at index 3 must me a non-zero value.')
+            raise ValueError('Field \'data\' at index 3 must be a non-zero value.')
         if not self.consequent_count > 0:
-            raise ValueError('Field \'data\' at index 4 must me a non-zero value.')
+            raise ValueError('Field \'data\' at index 4 must be a non-zero value.')
         if np.any(np.diff(self.data[5:]) <= 0):
             raise ValueError('Field \'data\' must contain only unique values sorted in ascending order from index 5.')
 
@@ -24,37 +24,38 @@ class Suggestion:
         return hash(tuple(self.data))
 
     def __repr__(self) -> str:
-        return f'Suggestion({self.data!r})'
+        return f'{self.__class__.__name__}({self.data!r})'
 
     def __str__(self) -> str:
-        return f'Suggestion(' \
+        return f'{self.__class__.__name__}(' \
                f'consequent_item={self.consequent_item}, ' \
                f'transaction_count={self.transaction_count}, ' \
                f'item_set_count={self.item_set_count}, ' \
                f'antecedent_count={self.antecedent_count}, ' \
                f'consequent_count={self.consequent_count}, ' \
                f'antecedent_items={self.antecedent_items}, ' \
-               f'lift={self.lift}, ' \
-               f'support={self.support})'
+               f'support={self.support}, ' \
+               f'confidence={self.confidence}, ' \
+               f'lift={self.lift})'
 
     def __eq__(self, other) -> bool:
         return np.array_equal(self.data, other.data)
 
     def __ge__(self, other) -> bool:
-        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) <= \
-               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
+        return (self.lift, self.support, self.consequent_item, self.antecedent_items) <= \
+               (other.lift, other.support, other.consequent_item, other.antecedent_items)
 
     def __gt__(self, other) -> bool:
-        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) < \
-               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
+        return (self.lift, self.support, self.consequent_item, self.antecedent_items) < \
+               (other.lift, other.support, other.consequent_item, other.antecedent_items)
 
     def __le__(self, other) -> bool:
-        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) >= \
-               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
+        return (self.lift, self.support, self.consequent_item, self.antecedent_items) >= \
+               (other.lift, other.support, other.consequent_item, other.antecedent_items)
 
     def __lt__(self, other) -> bool:
-        return (self.lift, self.support, self.data[0], tuple(self.data[5:])) > \
-               (other.lift, other.support, other.data[0], tuple(other.data[5:]))
+        return (self.lift, self.support, self.consequent_item, self.antecedent_items) > \
+               (other.lift, other.support, other.consequent_item, other.antecedent_items)
 
     def __ne__(self, other):
         return not np.array_equal(self.data, other.data)
@@ -84,12 +85,21 @@ class Suggestion:
         return tuple(self.data[5:])
 
     @property
-    def lift(self) -> float:
-        return float(self.data[1]) * float(self.data[2]) / (float(self.data[3]) * float(self.data[4]))
+    def support(self) -> float:
+        return float(self.item_set_count) / float(self.transaction_count)
 
     @property
-    def support(self) -> float:
-        return float(self.data[2]) / float(self.data[1])
+    def confidence(self) -> float:
+        return float(self.item_set_count) / float(self.antecedent_count) \
+               if self.antecedent_count != 0 \
+               else float('inf')
+
+    @property
+    def lift(self) -> float:
+        return float(self.transaction_count) * float(self.item_set_count) \
+             / (float(self.antecedent_count) * float(self.consequent_count)) \
+               if self.antecedent_count != 0 \
+               else float('inf')
 
 
 __all__ = ('Suggestion',)
